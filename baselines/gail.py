@@ -31,7 +31,7 @@ def parse_args():
                         help="MuJoCo Gym environment ID, e.g. Ant-v2.")
     parser.add_argument("--num_expert_trajs", type=int, default=5,
                         help="Number of expert episodes to use.")
-    parser.add_argument("--train_steps", type=int, default=500_000,
+    parser.add_argument("--train_steps", type=int, default=1_000_000,
                         help="Number of GAIL training timesteps (generator steps).")
     parser.add_argument("--eval_episodes", type=int, default=10,
                         help="Number of evaluation episodes (before/after training).")
@@ -95,6 +95,8 @@ def main():
     env_fn = lambda: gym.make(args.env_name)
     venv = DummyVecEnv([env_fn])
 
+    batch_size = 4096  # how many timesteps we collect each generator round
+
     # 4. Load expert trajectories
     trajectories = load_expert_trajectories(args.env_name, args.num_expert_trajs)
 
@@ -115,7 +117,7 @@ def main():
 
     # 4. Create GAIL trainer with defaults
     gail_trainer = GAIL(
-        demo_batch_size=1024,
+        demo_batch_size=batch_size,
         demonstrations=trajectories,  # required
         venv=venv,                     # required
         gen_algo=learner,              # required
@@ -136,38 +138,39 @@ def main():
     print(f"[Before Training] Mean Return: {mean_before:.2f}")
     writer.add_scalar("eval/untrained_mean_return", mean_before, 0)
 
+    # We want to do an evaluation at these times:
+    next_eval = args.eval_freq
+
     # 8. Train GAIL manually so we can log inside the loop
     total_timesteps = 0
-    batch_size = 4096  # how many timesteps we collect each generator round
 
-    # Create a tqdm progress bar with a total of args.train_steps
     with tqdm(total=args.train_steps, desc="Training GAIL") as pbar:
         while total_timesteps < args.train_steps:
 
-            # 1) Generator training (1 PPO update step)
-            #    train_gen() returns None by default, so there's no dictionary to log.
+            # (1) Generator training
             gail_trainer.train_gen()
 
-            # 2) Discriminator training (n_disc_updates_per_round times)
-            #    We do multiple discriminator updates, so gather stats each time.
+            # (2) Discriminator training
             disc_losses = []
             for _ in range(gail_trainer.n_disc_updates_per_round):
-                disc_stats = gail_trainer.train_disc()  # e.g. {'disc_loss': 0.0, 'disc_acc': 1.0, ...}
+                disc_stats = gail_trainer.train_disc()
                 disc_losses.append(disc_stats["disc_loss"])
 
-                # Log each of the returned metrics for this update
+                # Log each of the returned discriminator metrics
                 for k, v in disc_stats.items():
                     writer.add_scalar(f"disc/{k}", v, total_timesteps)
 
+            # (3) Log the average discriminator loss
             mean_disc_loss = np.mean(disc_losses)
             writer.add_scalar("disc/mean_disc_loss", mean_disc_loss, total_timesteps)
 
-            # 3) Update counters
+            # (4) Update counters
             total_timesteps += batch_size
             pbar.update(batch_size)
 
-            # 4) Evaluate and log to TensorBoard every 'eval_freq' steps
-            if total_timesteps % args.eval_freq == 0:
+            # (5) Evaluate *once we pass* the next_eval threshold
+            if total_timesteps >= next_eval:
+                # Evaluate policy
                 venv.reset()
                 eval_rewards, _ = evaluate_policy(
                     learner,
@@ -178,6 +181,9 @@ def main():
                 mean_eval = np.mean(eval_rewards)
                 writer.add_scalar("eval/mean_return", mean_eval, total_timesteps)
                 print(f"[Evaluation @ {total_timesteps} steps] Mean Return: {mean_eval:.2f}")
+
+                # Increment next_eval so we evaluate again in another `args.eval_freq` steps
+                next_eval += args.eval_freq
 
     # 9. Evaluate trained policy
     venv.reset()
@@ -209,4 +215,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python baselines/gail.py --env_name Ant-v5 --num_expert_trajs 16
+# python baselines/gail.py --env_name Hopper-v5 --num_expert_trajs 16
