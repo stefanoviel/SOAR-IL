@@ -1,0 +1,212 @@
+import os
+import argparse
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+
+import gymnasium as gym
+
+from stable_baselines3 import PPO
+from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.ppo import MlpPolicy
+
+from imitation.algorithms.adversarial.gail import GAIL
+from imitation.data.types import Trajectory
+from imitation.rewards.reward_nets import BasicRewardNet
+from imitation.util.networks import RunningNorm
+from stable_baselines3.common.vec_env import DummyVecEnv
+
+import datetime
+import dateutil.tz
+
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+def parse_args():
+    """
+    Parse command-line arguments for environment name, number of expert trajectories, etc.
+    """
+    parser = argparse.ArgumentParser(description="Train GAIL on a MuJoCo environment from raw .pt expert data.")
+    parser.add_argument("--env_name", type=str, default="Ant-v2",
+                        help="MuJoCo Gym environment ID, e.g. Ant-v2.")
+    parser.add_argument("--num_expert_trajs", type=int, default=5,
+                        help="Number of expert episodes to use.")
+    parser.add_argument("--train_steps", type=int, default=500_000,
+                        help="Number of GAIL training timesteps (generator steps).")
+    parser.add_argument("--eval_episodes", type=int, default=10,
+                        help="Number of evaluation episodes (before/after training).")
+    parser.add_argument("--eval_freq", type=int, default=5000,
+                        help="Frequency (in timesteps) of policy evaluation.")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducibility.")
+    return parser.parse_args()
+
+
+def load_expert_trajectories(env_name: str, num_trajs: int):
+    """
+    Loads expert states and actions from .pt files:
+      - states: expert_data/states/{env_name}.pt
+      - actions: expert_data/actions/{env_name}.pt
+    Each shape is [N, T+1, state_dim] or [N, T, action_dim], etc.
+
+    Returns a list of `Trajectory` objects, each a full episode.
+    """
+    states_path = f"expert_data/states/{env_name}.pt"
+    actions_path = f"expert_data/actions/{env_name}.pt"
+
+    # Load raw expert data
+    expert_states_all = torch.load(states_path).numpy()  # shape: (N, T+1, state_dim)
+    expert_actions_all = torch.load(actions_path).numpy() # shape: (N, T, act_dim)
+
+    # Keep only the first `num_trajs` trajectories
+    expert_states = expert_states_all[:num_trajs]
+    expert_actions = expert_actions_all[:num_trajs]
+
+    # Build a list of Trajectory objects
+    trajectories = []
+    for i in range(expert_states.shape[0]):
+        states_i = expert_states[i]    # shape (T, state_dim)
+        actions_i = expert_actions[i]  # shape (T, act_dim)
+
+        # We want len(obs) = len(acts)+1, but we currently have T == T.
+        # So we’ll keep all T states, and drop the last action:
+        obs = states_i
+        acts = actions_i[:-1]          # discard last action
+
+        infos = [{} for _ in range(len(acts))]  # length T-1
+        traj = Trajectory(obs=obs, acts=acts, infos=infos, terminal=False)
+        trajectories.append(traj)
+
+    return trajectories
+
+
+def main():
+    args = parse_args()
+
+    # 1. Logging directory
+    now = datetime.datetime.now(dateutil.tz.tzlocal())
+    log_dir = f"logs/{args.env_name}/exp-{args.num_expert_trajs}/gail/" + now.strftime('%Y_%m_%d_%H_%M_%S')
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # 2. Instantiate TensorBoard writer
+    writer = SummaryWriter(log_dir=log_dir)
+
+    # 3. Create vectorized environment
+    env_fn = lambda: gym.make(args.env_name)
+    venv = DummyVecEnv([env_fn])
+
+    # 4. Load expert trajectories
+    trajectories = load_expert_trajectories(args.env_name, args.num_expert_trajs)
+
+    learner = PPO(
+        policy="MlpPolicy",  # or MlpPolicy from SB3 if already imported
+        env=venv,
+        seed=args.seed,      # not strictly "default," but typically you keep a seed
+    )
+
+    # 3. Create the reward network with defaults
+    reward_net = BasicRewardNet(
+        observation_space=venv.observation_space,
+        action_space=venv.action_space,
+        # By default, BasicRewardNet uses hid_sizes=(64, 64), no normalization,
+        # and a ReLU activation. 
+        # No extra kwargs => all default.
+    )
+
+    # 4. Create GAIL trainer with defaults
+    gail_trainer = GAIL(
+        demo_batch_size=1024,
+        demonstrations=trajectories,  # required
+        venv=venv,                     # required
+        gen_algo=learner,              # required
+        reward_net=reward_net,         # recommended so we show it explicitly,
+
+        allow_variable_horizon=True,   # recommended
+    )
+
+    # 7. Evaluate untrained policy
+    venv.reset()
+    rewards_before, _ = evaluate_policy(
+        learner,
+        venv,
+        n_eval_episodes=args.eval_episodes,
+        return_episode_rewards=True,
+    )
+    mean_before = np.mean(rewards_before)
+    print(f"[Before Training] Mean Return: {mean_before:.2f}")
+    writer.add_scalar("eval/untrained_mean_return", mean_before, 0)
+
+    # 8. Train GAIL manually so we can log inside the loop
+    total_timesteps = 0
+    batch_size = 4096  # how many timesteps we collect each generator round
+
+    # Create a tqdm progress bar with a total of args.train_steps
+    with tqdm(total=args.train_steps, desc="Training GAIL") as pbar:
+        while total_timesteps < args.train_steps:
+
+            # 1) Generator training (1 PPO update step)
+            #    train_gen() returns None by default, so there's no dictionary to log.
+            gail_trainer.train_gen()
+
+            # 2) Discriminator training (n_disc_updates_per_round times)
+            #    We do multiple discriminator updates, so gather stats each time.
+            disc_losses = []
+            for _ in range(gail_trainer.n_disc_updates_per_round):
+                disc_stats = gail_trainer.train_disc()  # e.g. {'disc_loss': 0.0, 'disc_acc': 1.0, ...}
+                disc_losses.append(disc_stats["disc_loss"])
+
+                # Log each of the returned metrics for this update
+                for k, v in disc_stats.items():
+                    writer.add_scalar(f"disc/{k}", v, total_timesteps)
+
+            mean_disc_loss = np.mean(disc_losses)
+            writer.add_scalar("disc/mean_disc_loss", mean_disc_loss, total_timesteps)
+
+            # 3) Update counters
+            total_timesteps += batch_size
+            pbar.update(batch_size)
+
+            # 4) Evaluate and log to TensorBoard every 'eval_freq' steps
+            if total_timesteps % args.eval_freq == 0:
+                venv.reset()
+                eval_rewards, _ = evaluate_policy(
+                    learner,
+                    venv,
+                    n_eval_episodes=args.eval_episodes,
+                    return_episode_rewards=True,
+                )
+                mean_eval = np.mean(eval_rewards)
+                writer.add_scalar("eval/mean_return", mean_eval, total_timesteps)
+                print(f"[Evaluation @ {total_timesteps} steps] Mean Return: {mean_eval:.2f}")
+
+    # 9. Evaluate trained policy
+    venv.reset()
+    rewards_after, _ = evaluate_policy(
+        learner,
+        venv,
+        n_eval_episodes=args.eval_episodes,
+        return_episode_rewards=True,
+    )
+    mean_after = np.mean(rewards_after)
+    print(f"[After Training] Mean Return: {mean_after:.2f}")
+    writer.add_scalar("eval/trained_mean_return", mean_after, total_timesteps)
+
+    # 10. Close writer and plot
+    writer.close()
+
+    # Simple bar plot comparing returns
+    plt.figure(figsize=(6,4))
+    plt.bar(["Before", "After"], [mean_before, mean_after],
+            color=["red", "blue"], alpha=0.6)
+    plt.ylabel("Mean Return")
+    plt.title(f"GAIL on {args.env_name}\n({args.num_expert_trajs} expert episodes)")
+    plot_path = os.path.join(log_dir, "gail_return_comparison.png")
+    plt.savefig(plot_path)
+    plt.show()
+    print(f"Saved reward comparison plot to: {plot_path}")
+
+
+if __name__ == "__main__":
+    main()
+
+# python baselines/gail.py --env_name Ant-v5 --num_expert_trajs 16

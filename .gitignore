@@ -1,0 +1,22 @@
+# MacOS
+.DS_Store
+
+# Python
+__pycache__/
+build/
+.ipynb_checkpoints
+*.ipynb
+
+.vscode/
+
+# not pushing reward models 
+*.pkl
+
+# videos, a soft link to disk
+data/videos
+
+.myenv
+
+outputs/
+
+logs/
