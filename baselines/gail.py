@@ -141,6 +141,11 @@ def main():
     # We want to do an evaluation at these times:
     next_eval = args.eval_freq
 
+    # Create CSV file and write column headers
+    csv_path = os.path.join(log_dir, "progress.csv")
+    with open(csv_path, "w") as f:
+        f.write("Itration,Real Det Return\n")
+
     # 8. Train GAIL manually so we can log inside the loop
     total_timesteps = 0
 
@@ -181,6 +186,10 @@ def main():
                 mean_eval = np.mean(eval_rewards)
                 writer.add_scalar("eval/mean_return", mean_eval, total_timesteps)
                 print(f"[Evaluation @ {total_timesteps} steps] Mean Return: {mean_eval:.2f}")
+
+                # Save evaluation results to CSV
+                with open(csv_path, "a") as f:
+                    f.write(f"{next_eval // args.eval_freq},{mean_eval}\n")
 
                 # Increment next_eval so we evaluate again in another `args.eval_freq` steps
                 next_eval += args.eval_freq
