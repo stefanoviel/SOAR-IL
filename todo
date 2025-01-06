@@ -1,5 +1,3 @@
-leggere paper
-
 implement baseline
     https://github.com/Div99/IQ-Learn
     https://github.com/Zzl35/OPT-AIL
@@ -8,5 +6,5 @@ implement baseline
 e' un problema se uso 16 expert trajectories
 
 
-ciao luca, scusa se ti disturbo ora (rispondi pure quando ai tempo). Stavo provando ad implementare GAIL come baseline, ma con stable_baselines3 supportano solo fino agli ambienti con version v4 (noi abbiamo sempre usato v5). Ho guardato e non sembra cambi molto tra v4 e v5, ma non penso vada bene usare un environment diverso per la baseline. Ho cercato un po’ ma non sono riuscito a trovare un’implementazione di GAIL per v5. Quindi ci sono due possibilita’: 1) cambiare il codice della libreria in modo che funzioni con v5 2) runnare gli esperimenti vecchi con v4. 
-Cosa pensi sia meglio?
+aggiunto smoothing perche' penso che sia importante che sia stabile all'inizio. 
+idk why halfchetaah isn't working

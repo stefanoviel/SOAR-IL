@@ -27,8 +27,8 @@ def parse_args():
     Parse command-line arguments for environment name, number of expert trajectories, etc.
     """
     parser = argparse.ArgumentParser(description="Train GAIL on a MuJoCo environment from raw .pt expert data.")
-    parser.add_argument("--env_name", type=str, default="Ant-v2",
-                        help="MuJoCo Gym environment ID, e.g. Ant-v2.")
+    parser.add_argument("--env_name", type=str, default="Ant-v5",
+                        help="MuJoCo Gym environment ID, e.g. Ant-v5.")
     parser.add_argument("--num_expert_trajs", type=int, default=5,
                         help="Number of expert episodes to use.")
     parser.add_argument("--train_steps", type=int, default=1_000_000,
@@ -83,30 +83,31 @@ def load_expert_trajectories(env_name: str, num_trajs: int):
 def main():
     args = parse_args()
 
-    # 1. Logging directory
+    #  Logging directory
     now = datetime.datetime.now(dateutil.tz.tzlocal())
     log_dir = f"logs/{args.env_name}/exp-{args.num_expert_trajs}/gail/" + now.strftime('%Y_%m_%d_%H_%M_%S')
     os.makedirs(log_dir, exist_ok=True)
     
-    # 2. Instantiate TensorBoard writer
+    #  Instantiate TensorBoard writer
     writer = SummaryWriter(log_dir=log_dir)
 
-    # 3. Create vectorized environment
+    #  Create vectorized environment
     env_fn = lambda: gym.make(args.env_name)
     venv = DummyVecEnv([env_fn])
 
     batch_size = 4096  # how many timesteps we collect each generator round
 
-    # 4. Load expert trajectories
+    # Load expert trajectories
     trajectories = load_expert_trajectories(args.env_name, args.num_expert_trajs)
 
     learner = PPO(
         policy="MlpPolicy",  # or MlpPolicy from SB3 if already imported
         env=venv,
         seed=args.seed,      # not strictly "default," but typically you keep a seed
+        # gamma=0.95,          
     )
 
-    # 3. Create the reward network with defaults
+    # Create the reward network with defaults
     reward_net = BasicRewardNet(
         observation_space=venv.observation_space,
         action_space=venv.action_space,
@@ -115,18 +116,17 @@ def main():
         # No extra kwargs => all default.
     )
 
-    # 4. Create GAIL trainer with defaults
+    # Create GAIL trainer with defaults
     gail_trainer = GAIL(
         demo_batch_size=batch_size,
-        demonstrations=trajectories,  # required
-        venv=venv,                     # required
-        gen_algo=learner,              # required
-        reward_net=reward_net,         # recommended so we show it explicitly,
-
-        allow_variable_horizon=True,   # recommended
+        demonstrations=trajectories,  
+        venv=venv,                     
+        gen_algo=learner,              
+        reward_net=reward_net,         
+        allow_variable_horizon=True,   
     )
 
-    # 7. Evaluate untrained policy
+    # Evaluate untrained policy
     venv.reset()
     rewards_before, _ = evaluate_policy(
         learner,
@@ -146,16 +146,16 @@ def main():
     with open(csv_path, "w") as f:
         f.write("Itration,Real Det Return\n")
 
-    # 8. Train GAIL manually so we can log inside the loop
+    # Train GAIL manually so we can log inside the loop
     total_timesteps = 0
 
     with tqdm(total=args.train_steps, desc="Training GAIL") as pbar:
         while total_timesteps < args.train_steps:
 
-            # (1) Generator training
+            # Generator training
             gail_trainer.train_gen()
 
-            # (2) Discriminator training
+            # Discriminator training
             disc_losses = []
             for _ in range(gail_trainer.n_disc_updates_per_round):
                 disc_stats = gail_trainer.train_disc()
@@ -165,15 +165,15 @@ def main():
                 for k, v in disc_stats.items():
                     writer.add_scalar(f"disc/{k}", v, total_timesteps)
 
-            # (3) Log the average discriminator loss
+            #  Log the average discriminator loss
             mean_disc_loss = np.mean(disc_losses)
             writer.add_scalar("disc/mean_disc_loss", mean_disc_loss, total_timesteps)
 
-            # (4) Update counters
+            #  Update counters
             total_timesteps += batch_size
             pbar.update(batch_size)
 
-            # (5) Evaluate *once we pass* the next_eval threshold
+            # Evaluate *once we pass* the next_eval threshold
             if total_timesteps >= next_eval:
                 # Evaluate policy
                 venv.reset()
@@ -194,7 +194,7 @@ def main():
                 # Increment next_eval so we evaluate again in another `args.eval_freq` steps
                 next_eval += args.eval_freq
 
-    # 9. Evaluate trained policy
+
     venv.reset()
     rewards_after, _ = evaluate_policy(
         learner,

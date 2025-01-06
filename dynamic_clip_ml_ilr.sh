@@ -10,7 +10,7 @@ q_values=(1 4)
 seeds=(42 123 456 789 1024)
 
 # Array of environments
-environments=(ant)
+environments=(ant, halfcheetah, hopper, humanoid, walker2d)
 
 # Add delay between process launches
 delay_seconds=1
