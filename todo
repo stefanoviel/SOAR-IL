@@ -3,8 +3,14 @@ implement baseline
     https://github.com/Zzl35/OPT-AIL
     for GAIL https://stable-baselines3.readthedocs.io/en/master/guide/imitation.html
 
-e' un problema se uso 16 expert trajectories
+
+todo: 
+* AIRL
+* SQIL 
+* BC
+* https://github.com/Zzl35/OPT-AIL
 
 
-aggiunto smoothing perche' penso che sia importante che sia stabile all'inizio. 
-idk why halfchetaah isn't working
+
+plot con tutte le linee. improve readibility with smoothing (average over n iterations). easy to exclude or include algorithms. No legend. 
+dividere plot uno solo stati l'altro stati azione. 
