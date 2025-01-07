@@ -36,7 +36,7 @@ def parse_args():
                         help="MuJoCo Gym environment ID, e.g. Ant-v5.")
     parser.add_argument("--num_expert_trajs", type=int, default=5,
                         help="Number of expert episodes to use.")
-    parser.add_argument("--train_steps", type=int, default=1_000_000,
+    parser.add_argument("--train_steps", type=int, default=1_500_000,
                         help="Number of AIRL training timesteps (generator steps).")
     parser.add_argument("--eval_episodes", type=int, default=10,
                         help="Number of evaluation episodes (before/after training).")
@@ -47,9 +47,12 @@ def parse_args():
     return parser.parse_args()
 
 
-
 def main():
     args = parse_args()
+
+    # Force CPU usage (no CUDA)
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Hides all GPUs from PyTorch
+    device = "cpu"
 
     #  Logging directory
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -68,20 +71,18 @@ def main():
     # Load expert trajectories
     trajectories = load_expert_trajectories_imitation(args.env_name, args.num_expert_trajs)
 
+    # Create the PPO learner on CPU
     learner = PPO(
         policy="MlpPolicy",
         env=venv,
         seed=args.seed,
+        device=device  # <--- Force CPU device here
     )
 
     # Create the reward network for AIRL
-    # BasicShapedRewardNet is generally recommended for AIRL,
-    # but BasicRewardNet can also be used if you want the simplest approach.
     reward_net = BasicShapedRewardNet(
         observation_space=venv.observation_space,
         action_space=venv.action_space,
-        # By default, BasicShapedRewardNet uses hid_sizes=(64, 64), no normalization,
-        # and a ReLU activation.
     )
 
     # Create AIRL trainer
@@ -143,7 +144,6 @@ def main():
 
             # Evaluate *once we pass* the next_eval threshold
             if total_timesteps >= next_eval:
-                # Evaluate policy
                 venv.reset()
                 eval_rewards, _ = evaluate_policy(
                     learner,
@@ -159,7 +159,6 @@ def main():
                 with open(csv_path, "a") as f:
                     f.write(f"{next_eval // args.eval_freq},{mean_eval}\n")
 
-                # Increment next_eval so we evaluate again in another `args.eval_freq` steps
                 next_eval += args.eval_freq
 
     # Final evaluation
