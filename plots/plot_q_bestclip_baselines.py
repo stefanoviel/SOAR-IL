@@ -8,7 +8,8 @@ from pathlib import Path
 
 # ========== USER DEFINED VARIABLES ==========
 
-ENV_NAME = "Ant-v5"
+# List of environments to process
+ENVIRONMENTS = ["Ant-v5", "Hopper-v5", "Walker2d-v5", "Humanoid-v5", "HalfCheetah-v5"]  
 
 # Methods to plot
 METHODS = ["maxentirl", "rkl"]
@@ -20,10 +21,28 @@ METHOD_COLORS = {
     # Add more if needed
 }
 
-# Baselines + their CSVs
-BASELINES = {
-    "gail": "/home/viel/SOAR-IL/logs/Ant-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
-    # "bc":   "/path/to/baseline_bc.csv",
+
+BASELINES_DICT = {
+    "Ant-v5": {
+        "gail": "logs/Ant-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        # "bc":   "/path/to/baseline_bc.csv",
+    },
+    "Hopper-v5": {
+        "gail": "logs/Hopper-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        # add more if you have them
+    },
+    "Walker2d-v5": {
+        "gail": "logs/Walker2d-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        # add more if you have them
+    },
+    "Humanoid-v5": {
+        "gail": "logs/Humanoid-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        # add more if you have them
+    },
+    "HalfCheetah-v5": {
+        "gail": "logs/HalfCheetah-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        # add more if you have them
+    },
 }
 
 # Manually specify colors for each baseline
@@ -48,11 +67,12 @@ MAX_EPISODES_DICT = {
 }
 
 # (Optional) mapping from environment to the exact expert .txt file
-# If you have multiple seeds or a different naming, adjust accordingly.
 EXPERT_FILE_DICT = {
     "Ant-v5": "expert_data/meta/AntFH-v0_airl.txt",
     "Hopper-v5": "expert_data/meta/Hopper-v5_1.txt",
-    # ...
+    "Walker2d-v5": "expert_data/meta/Walker2d-v5_1.txt",
+    "Humanoid-v5": "expert_data/meta/Humanoid-v5_1.txt",
+    "HalfCheetah-v5": "expert_data/meta/HalfCheetah-v5_1.txt",
 }
 
 
@@ -81,9 +101,13 @@ def compute_mean_return_across_seeds(df: pd.DataFrame) -> pd.DataFrame:
     """
     Group by (q, clip, episode), compute mean and std across seeds.
     Returns a DataFrame with columns: q, clip, episode, mean_return, std_return, n_seeds.
+    This version ensures we keep rows where clip is NaN (e.g., for q=1).
     """
-    grouped = df.groupby(['q', 'clip', 'episode'])
+    # Use dropna=False to include NaN values as their own group
+    grouped = df.groupby(['q', 'clip', 'episode'], dropna=False)
+    
     df_agg = grouped['Real Det Return'].agg(['mean', 'std', 'count']).reset_index()
+    
     df_agg.rename(
         columns={
             'mean': 'mean_return',
@@ -93,6 +117,7 @@ def compute_mean_return_across_seeds(df: pd.DataFrame) -> pd.DataFrame:
         inplace=True
     )
     return df_agg
+
 
 def compute_auc(df_mean_std: pd.DataFrame, use_trapz: bool = False) -> pd.DataFrame:
     """
@@ -165,29 +190,30 @@ def parse_expert_det_return(expert_txt_path: str) -> float:
     return None
 
 
-# ========== MAIN LOGIC ==========
+def process_environment(env_name: str):
+    """
+    Creates a plot for a single environment, using:
+      - Q=1 line (dashed) + best clipping line (solid) for each method
+      - Baselines for that environment
+      - Horizontal line for the expert return
+    Then saves the figure in `plots/{env_name}` directory.
+    """
 
-def main():
-    """
-    Create a single plot with:
-      - For each method in METHODS: 
-          * q=1 line (dashed) 
-          * best clip line (solid) 
-          * same color
-      - All baselines 
-      - Horizontal line for expert return (if found)
-    """
-    max_ep = MAX_EPISODES_DICT.get(ENV_NAME, None)
+    # Retrieve baseline dictionary for this environment (if any)
+    baselines_for_env = BASELINES_DICT.get(env_name, {})
+
+    # Max episodes for environment
+    max_ep = MAX_EPISODES_DICT.get(env_name, None)
     
     # Dictionary to store data & best clip results
     method_results = {}
     method_best = {}
     
-    print(f"=== Processing environment: {ENV_NAME} ===")
+    print(f"=== Processing environment: {env_name} ===")
 
     # 1) For each method, load CSV, compute means, then AUC, then best clip
     for method in METHODS:
-        df_raw = load_processed_data_for_method(ENV_NAME, method, PROCESSED_DATA_DIR)
+        df_raw = load_processed_data_for_method(env_name, method, PROCESSED_DATA_DIR)
         if df_raw is None:
             continue  # skip if no file found
         
@@ -207,22 +233,23 @@ def main():
     
     # 2) Load each baseline, filter by max_ep
     baseline_dfs = {}
-    for baseline_name, baseline_path in BASELINES.items():
+    for baseline_name, baseline_path in baselines_for_env.items():
         if not os.path.isfile(baseline_path):
             print(f"[Warning] Baseline file not found: {baseline_path}")
             continue
         df_base = load_baseline_data(baseline_path)
         if max_ep is not None:
+            # Filter if the 'episode' (or 'Iteration') column is beyond max_ep
             df_base = df_base[df_base['Itration'] <= max_ep]
         baseline_dfs[baseline_name] = df_base
     
     # 3) Parse expert deterministic return (horizontal line)
     expert_return = None
-    expert_txt_path = EXPERT_FILE_DICT.get(ENV_NAME, None)
+    expert_txt_path = EXPERT_FILE_DICT.get(env_name, None)
     if expert_txt_path:
         expert_return = parse_expert_det_return(expert_txt_path)
         if expert_return is not None:
-            print(f"Expert(Det) Return for {ENV_NAME}: {expert_return:.2f}")
+            print(f"Expert(Det) Return for {env_name}: {expert_return:.2f}")
     
     # 4) Create the plot
     plt.figure(figsize=(10, 6))
@@ -295,7 +322,7 @@ def main():
         )
     
     # 5) Decorate and save
-    plt.title(f"{ENV_NAME} Comparison: Q=1 vs Best Clip (Multiple Methods) + Baselines + Expert")
+    plt.title(f"{env_name} Comparison: Q=1 vs Best Clip (Multiple Methods) + Baselines + Expert")
     plt.xlabel("Episode")
     plt.ylabel("Real Det Return")
     plt.legend()
@@ -303,13 +330,23 @@ def main():
 
     # Save figure
     method_str = "_".join(METHODS) if METHODS else "noMethod"
-    out_dir = Path("plots") / ENV_NAME
+    out_dir = Path("plots") / env_name
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_name = f"{ENV_NAME}_{method_str}_q1_vs_bestclip_vs_baselines_expert.png"
+    out_name = f"{env_name}_{method_str}_q1_vs_bestclip_vs_baselines_expert.png"
     out_path = out_dir / out_name
     plt.savefig(out_path, dpi=300)
     plt.close()
     print(f"Plot saved at {out_path}")
+
+
+# ========== MAIN LOGIC ==========
+
+def main():
+    """
+    Loops over all environments in ENVIRONMENTS and creates one plot per environment.
+    """
+    for env_name in ENVIRONMENTS:
+        process_environment(env_name)
 
 if __name__ == "__main__":
     main()
