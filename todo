@@ -11,6 +11,10 @@ todo:
 * https://github.com/Zzl35/OPT-AIL
 
 
-
 plot con tutte le linee. improve readibility with smoothing (average over n iterations). easy to exclude or include algorithms. No legend. 
 dividere plot uno solo stati l'altro stati azione. 
+
+
+backup of logs
+better grid-search halfchetaach
+finish baselines

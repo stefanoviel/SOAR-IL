@@ -44,8 +44,7 @@ def main():
     # Force CPU usage (no CUDA)
     # This effectively makes PyTorch ignore GPU devices
     # so everything runs on CPU
-    device = 'cpu'
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    device = 'cuda:1'
 
     # Logging directory
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -103,7 +102,7 @@ def main():
 
     csv_path = os.path.join(log_dir, "progress.csv")
     with open(csv_path, "w") as f:
-        f.write("Iteration,Real Det Return\n")
+        f.write("episode,Real Det Return\n")
 
     total_timesteps = 0
 
@@ -140,7 +139,7 @@ def main():
                 print(f"[Evaluation @ {total_timesteps} steps] Mean Return: {mean_eval:.2f}")
 
                 with open(csv_path, "a") as f:
-                    f.write(f"{next_eval // args.eval_freq},{mean_eval}\n")
+                    f.write(f"{next_eval},{mean_eval}\n")
 
                 next_eval += args.eval_freq
 

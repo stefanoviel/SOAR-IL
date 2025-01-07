@@ -51,8 +51,7 @@ def main():
     args = parse_args()
 
     # Force CPU usage (no CUDA)
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""  # Hides all GPUs from PyTorch
-    device = "cpu"
+    device = "cuda:2"
 
     #  Logging directory
     now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -113,7 +112,7 @@ def main():
     # Create CSV file and write column headers
     csv_path = os.path.join(log_dir, "progress.csv")
     with open(csv_path, "w") as f:
-        f.write("Iteration,MeanEvalReturn\n")
+        f.write("episode,MeanEvalReturn\n")
 
     # Train AIRL manually so we can log inside the loop
     total_timesteps = 0
@@ -157,7 +156,7 @@ def main():
 
                 # Save evaluation results to CSV
                 with open(csv_path, "a") as f:
-                    f.write(f"{next_eval // args.eval_freq},{mean_eval}\n")
+                    f.write(f"{next_eval},{mean_eval}\n")
 
                 next_eval += args.eval_freq
 
