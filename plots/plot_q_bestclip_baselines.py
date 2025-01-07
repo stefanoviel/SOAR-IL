@@ -12,12 +12,14 @@ from pathlib import Path
 ENVIRONMENTS = ["Ant-v5", "Hopper-v5", "Walker2d-v5", "Humanoid-v5", "HalfCheetah-v5"]  
 
 # Methods to plot
-METHODS = ["maxentirl", "rkl"]
+METHODS = ["cisl", "maxentirl_sa"]
 
 # Manually specify colors for each method
 METHOD_COLORS = {
     "maxentirl": "blue",
     "rkl": "orange",
+    "cisl": "blue",
+    "maxentirl_sa": "orange",
     # Add more if needed
 }
 
@@ -55,6 +57,8 @@ BASELINE_COLORS = {
 PROCESSED_DATA_DIR = "processed_data"
 
 SHOW_CONFIDENCE = False
+
+SMOOTHING_WINDOW = 15
 
 # Dictionary specifying max episodes for each environment
 MAX_EPISODES_DICT = {
@@ -189,7 +193,6 @@ def parse_expert_det_return(expert_txt_path: str) -> float:
                 return float(match.group(1))
     return None
 
-
 def process_environment(env_name: str):
     """
     Creates a plot for a single environment, using:
@@ -240,6 +243,7 @@ def process_environment(env_name: str):
         df_base = load_baseline_data(baseline_path)
         if max_ep is not None:
             # Filter if the 'episode' (or 'Iteration') column is beyond max_ep
+            # (Note: the original code had a minor typo 'Itration'—ensure you adjust for your data)
             df_base = df_base[df_base['Itration'] <= max_ep]
         baseline_dfs[baseline_name] = df_base
     
@@ -265,9 +269,13 @@ def process_environment(env_name: str):
         # (a) Plot q=1 line (dashed)
         q1_data = df_mean_std[df_mean_std['q'] == 1.0].sort_values('episode')
         if not q1_data.empty:
+            # -- Smoothing step (rolling average) --
+            q1_data['smoothed_mean_return'] = (
+                q1_data['mean_return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
+            )
             plt.plot(
                 q1_data['episode'],
-                q1_data['mean_return'],
+                q1_data['smoothed_mean_return'],  # << use smoothed data
                 label=f"{method} (q=1)",
                 color=color,
                 linestyle='--'
@@ -284,10 +292,14 @@ def process_environment(env_name: str):
                 (df_mean_std['q'] == best_q) & (df_mean_std['clip'] == best_clip)
             ].sort_values('episode')
             if not best_data.empty:
+                # -- Smoothing step (rolling average) --
+                best_data['smoothed_mean_return'] = (
+                    best_data['mean_return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
+                )
                 label = f"{method} (q={best_q}, clip={best_clip})"
                 plt.plot(
                     best_data['episode'],
-                    best_data['mean_return'],
+                    best_data['smoothed_mean_return'],  # << use smoothed data
                     label=label,
                     color=color,
                     linestyle='-'
@@ -304,9 +316,15 @@ def process_environment(env_name: str):
             color = next(plt.gca()._get_lines.prop_cycler)['color']
         
         df_base = df_base.sort_values('Itration')
+        
+        # -- Smoothing step (rolling average) --
+        df_base['smoothed_return'] = (
+            df_base['Real Det Return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
+        )
+        
         plt.plot(
-            df_base['Itration'] * 5000, 
-            df_base['Real Det Return'], 
+            df_base['Itration'] * 5000,  # << convert to episode
+            df_base['smoothed_return'],  # << use smoothed data
             label=f"Baseline: {baseline_name}", 
             linestyle='-.',
             color=color
@@ -337,7 +355,6 @@ def process_environment(env_name: str):
     plt.savefig(out_path, dpi=300)
     plt.close()
     print(f"Plot saved at {out_path}")
-
 
 # ========== MAIN LOGIC ==========
 
