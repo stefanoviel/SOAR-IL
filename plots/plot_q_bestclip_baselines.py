@@ -1,22 +1,41 @@
 import os
 import glob
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-import math
 
 # ========== USER DEFINED VARIABLES ==========
+
 ENV_NAME = "Ant-v5"
-METHODS = ["maxentirl", "rkl"]  # You can add other methods
+
+# Methods to plot
+METHODS = ["maxentirl", "rkl"]
+
+# Manually specify colors for each method
+METHOD_COLORS = {
+    "maxentirl": "blue",
+    "rkl": "orange",
+    # Add more if needed
+}
+
+# Baselines + their CSVs
 BASELINES = {
     "gail": "/home/viel/SOAR-IL/logs/Ant-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
     # "bc":   "/path/to/baseline_bc.csv",
 }
+
+# Manually specify colors for each baseline
+BASELINE_COLORS = {
+    "gail": "green",
+    # "bc": "purple",
+    # Add more if needed
+}
+
 PROCESSED_DATA_DIR = "processed_data"
 
-# Whether to show ±std (or ±stderr) shading
-SHOW_CONFIDENCE = False  
+SHOW_CONFIDENCE = False
 
 # Dictionary specifying max episodes for each environment
 MAX_EPISODES_DICT = {
@@ -25,8 +44,17 @@ MAX_EPISODES_DICT = {
     "Ant-v5": 1.2e6,
     "Humanoid-v5": 1e6,
     "HalfCheetah-v5": 1.5e6,
-    # Add more as needed
+    # Add more environments as needed
 }
+
+# (Optional) mapping from environment to the exact expert .txt file
+# If you have multiple seeds or a different naming, adjust accordingly.
+EXPERT_FILE_DICT = {
+    "Ant-v5": "expert_data/meta/AntFH-v0_airl.txt",
+    "Hopper-v5": "expert_data/meta/Hopper-v5_1.txt",
+    # ...
+}
+
 
 # ========== HELPER FUNCTIONS ==========
 
@@ -117,36 +145,47 @@ def load_baseline_data(baseline_csv_path: str) -> pd.DataFrame:
         df['episode'] = df['Iteration'] * 5000
     return df
 
+def parse_expert_det_return(expert_txt_path: str) -> float:
+    """
+    Parse the file looking for a line like:
+      Expert(Det) Return Avg: 4061.41, std: 730.58
+    Returns the float (e.g. 4061.41).
+    If not found, returns None.
+    """
+    if not os.path.isfile(expert_txt_path):
+        print(f"[Warning] Expert file not found: {expert_txt_path}")
+        return None
+    
+    with open(expert_txt_path, "r") as f:
+        for line in f:
+            # Look for "Expert(Det) Return Avg: <number>"
+            match = re.search(r"Expert\(Det\) Return Avg:\s*([\d.]+)", line)
+            if match:
+                return float(match.group(1))
+    return None
+
+
 # ========== MAIN LOGIC ==========
 
 def main():
     """
     Create a single plot with:
-      - For each method in METHODS: q=1 line (dashed) + best clip line (solid, same color)
-      - All baselines in BASELINES
+      - For each method in METHODS: 
+          * q=1 line (dashed) 
+          * best clip line (solid) 
+          * same color
+      - All baselines 
+      - Horizontal line for expert return (if found)
     """
     max_ep = MAX_EPISODES_DICT.get(ENV_NAME, None)
     
-    # Prepare a color cycle for each method, so each method has a consistent color.
-    # E.g. if you have fewer methods than colors, you won't run out.
-    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
-    
-    # We'll store the color for each method in a dict:
-    method_colors = {}
-    
-    # Dictionary to store the processed DataFrame (grouped means) for each method
+    # Dictionary to store data & best clip results
     method_results = {}
-    # Dictionary to store best (q, clip) for each method
     method_best = {}
     
     print(f"=== Processing environment: {ENV_NAME} ===")
 
-    # 1) Assign a color to each method
-    for i, method in enumerate(METHODS):
-        color = color_cycle[i % len(color_cycle)]
-        method_colors[method] = color
-    
-    # 2) For each method, load CSV, compute means, then AUC, then best clip
+    # 1) For each method, load CSV, compute means, then AUC, then best clip
     for method in METHODS:
         df_raw = load_processed_data_for_method(ENV_NAME, method, PROCESSED_DATA_DIR)
         if df_raw is None:
@@ -166,23 +205,35 @@ def main():
         
         print(f"    Method={method}, best clip => q={best_q}, clip={best_clip}")
     
-    # 3) Load each baseline
+    # 2) Load each baseline, filter by max_ep
     baseline_dfs = {}
     for baseline_name, baseline_path in BASELINES.items():
         if not os.path.isfile(baseline_path):
             print(f"[Warning] Baseline file not found: {baseline_path}")
             continue
         df_base = load_baseline_data(baseline_path)
-        # If there's a max_ep limit, filter out episodes
         if max_ep is not None:
             df_base = df_base[df_base['Itration'] <= max_ep]
         baseline_dfs[baseline_name] = df_base
     
+    # 3) Parse expert deterministic return (horizontal line)
+    expert_return = None
+    expert_txt_path = EXPERT_FILE_DICT.get(ENV_NAME, None)
+    if expert_txt_path:
+        expert_return = parse_expert_det_return(expert_txt_path)
+        if expert_return is not None:
+            print(f"Expert(Det) Return for {ENV_NAME}: {expert_return:.2f}")
+    
     # 4) Create the plot
     plt.figure(figsize=(10, 6))
     
+    # Plot each method
     for method, df_mean_std in method_results.items():
-        color = method_colors[method]
+        # Get color if specified, else fallback to next in the cycle
+        color = METHOD_COLORS.get(method, None)
+        if color is None:
+            # fallback color from the default cycle
+            color = next(plt.gca()._get_lines.prop_cycler)['color']
         
         # (a) Plot q=1 line (dashed)
         q1_data = df_mean_std[df_mean_std['q'] == 1.0].sort_values('episode')
@@ -195,7 +246,6 @@ def main():
                 linestyle='--'
             )
             if SHOW_CONFIDENCE:
-                # For a more correct band, you could do ± std/sqrt(n_seeds).
                 upper = q1_data['mean_return'] + q1_data['std_return']
                 lower = q1_data['mean_return'] - q1_data['std_return']
                 plt.fill_between(q1_data['episode'], lower, upper, alpha=0.2, color=color)
@@ -220,19 +270,32 @@ def main():
                     lower = best_data['mean_return'] - best_data['std_return']
                     plt.fill_between(best_data['episode'], lower, upper, alpha=0.2, color=color)
     
-    # (c) Plot baselines (different line style, e.g., dotted or dash-dot)
+    # (c) Plot baselines
     for baseline_name, df_base in baseline_dfs.items():
-        # Ensure we sort by 'episode' if not already
+        color = BASELINE_COLORS.get(baseline_name, None)
+        if color is None:
+            color = next(plt.gca()._get_lines.prop_cycler)['color']
+        
         df_base = df_base.sort_values('Itration')
         plt.plot(
             df_base['Itration'] * 5000, 
             df_base['Real Det Return'], 
             label=f"Baseline: {baseline_name}", 
-            linestyle='-.'
+            linestyle='-.',
+            color=color
+        )
+    
+    # (d) Plot expert horizontal line (if found)
+    if expert_return is not None:
+        plt.axhline(
+            y=expert_return, 
+            color='black', 
+            linestyle=':',
+            label=f"Expert(Det) {expert_return:.2f}"
         )
     
     # 5) Decorate and save
-    plt.title(f"{ENV_NAME} Comparison: Q=1 vs Best Clip (Multiple Methods) + Baselines")
+    plt.title(f"{ENV_NAME} Comparison: Q=1 vs Best Clip (Multiple Methods) + Baselines + Expert")
     plt.xlabel("Episode")
     plt.ylabel("Real Det Return")
     plt.legend()
@@ -242,7 +305,7 @@ def main():
     method_str = "_".join(METHODS) if METHODS else "noMethod"
     out_dir = Path("plots") / ENV_NAME
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_name = f"{ENV_NAME}_{method_str}_q1_vs_bestclip_vs_baselines.png"
+    out_name = f"{ENV_NAME}_{method_str}_q1_vs_bestclip_vs_baselines_expert.png"
     out_path = out_dir / out_name
     plt.savefig(out_path, dpi=300)
     plt.close()
