@@ -112,7 +112,7 @@ def main():
     # Create CSV file and write column headers
     csv_path = os.path.join(log_dir, "progress.csv")
     with open(csv_path, "w") as f:
-        f.write("episode,MeanEvalReturn\n")
+        f.write("episode,Real Det Return\n")
 
     # Train AIRL manually so we can log inside the loop
     total_timesteps = 0

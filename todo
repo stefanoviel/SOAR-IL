@@ -11,10 +11,11 @@ todo:
 * https://github.com/Zzl35/OPT-AIL
 
 
-plot con tutte le linee. improve readibility with smoothing (average over n iterations). easy to exclude or include algorithms. No legend. 
-dividere plot uno solo stati l'altro stati azione. 
 
-
-backup of logs
 better grid-search halfchetaach
 finish baselines
+
+
+ciao, allora ho guardato il codice per allenare l'esperto e sono sicuro che è quello che avevo usato. Poi se guardi i plot in un caso arriva ad 8000 (quello con solo states e usando multiple critic) nell'altro solo a 4000 (state e actions) ma le trajectory usate sono le stesse, quindi ci deve essere qualche problema nel training. Poi se guardi il paper di f-IRL anche lì hanno un reward di 12000.
+
+Però è strano perchè utilizzo esattamente lo stesso algoritmo e gli stessi iperparametri degli altri (quelli che di fatto venivano proposti nel paper), quindi non capisco. 

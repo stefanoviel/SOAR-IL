@@ -12,7 +12,8 @@ from pathlib import Path
 ENVIRONMENTS = ["Ant-v5", "Hopper-v5", "Walker2d-v5", "Humanoid-v5", "HalfCheetah-v5"]  
 
 # Methods to plot
-METHODS = ["cisl", "maxentirl_sa"]
+# METHODS = ["cisl", "maxentirl_sa"]
+METHODS = ["maxentirl", "rkl"]
 
 # Manually specify colors for each method
 METHOD_COLORS = {
@@ -20,29 +21,33 @@ METHOD_COLORS = {
     "rkl": "orange",
     "cisl": "blue",
     "maxentirl_sa": "orange",
-    # Add more if needed
 }
 
 
 BASELINES_DICT = {
     "Ant-v5": {
-        "gail": "logs/Ant-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        "gail": "logs/Ant-v5/exp-16/gail/2025_01_07_17_15_49/progress.csv",
+        "airl": "logs/Ant-v5/exp-16/airl/2025_01_07_17_15_49/progress.csv",
         # "bc":   "/path/to/baseline_bc.csv",
     },
     "Hopper-v5": {
-        "gail": "logs/Hopper-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        "gail": "logs/Hopper-v5/exp-16/gail/2025_01_07_17_15_49/progress.csv",
+        "airl": "logs/Hopper-v5/exp-16/airl/2025_01_07_17_15_49/progress.csv",
         # add more if you have them
     },
     "Walker2d-v5": {
-        "gail": "logs/Walker2d-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        "gail": "logs/Walker2d-v5/exp-16/gail/2025_01_07_17_15_49/progress.csv",
+        "airl": "logs/Walker2d-v5/exp-16/airl/2025_01_07_17_15_49/progress.csv",
         # add more if you have them
     },
     "Humanoid-v5": {
-        "gail": "logs/Humanoid-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        "gail": "logs/Humanoid-v5/exp-16/gail/2025_01_07_17_15_48/progress.csv",
+        "airl": "logs/Humanoid-v5/exp-16/airl/2025_01_07_17_15_48/progress.csv",
         # add more if you have them
     },
     "HalfCheetah-v5": {
-        "gail": "logs/HalfCheetah-v5/exp-16/gail/2025_01_05_15_56_35/progress.csv",
+        "gail": "logs/HalfCheetah-v5/exp-16/gail/2025_01_07_17_15_47/progress.csv",
+        "airl": "logs/HalfCheetah-v5/exp-16/airl/2025_01_07_17_15_47/progress.csv",
         # add more if you have them
     },
 }
@@ -50,8 +55,7 @@ BASELINES_DICT = {
 # Manually specify colors for each baseline
 BASELINE_COLORS = {
     "gail": "green",
-    # "bc": "purple",
-    # Add more if needed
+    "airl": "red",
 }
 
 PROCESSED_DATA_DIR = "processed_data"
@@ -244,7 +248,7 @@ def process_environment(env_name: str):
         if max_ep is not None:
             # Filter if the 'episode' (or 'Iteration') column is beyond max_ep
             # (Note: the original code had a minor typo 'Itration'—ensure you adjust for your data)
-            df_base = df_base[df_base['Itration'] <= max_ep]
+            df_base = df_base[df_base['episode'] <= max_ep]
         baseline_dfs[baseline_name] = df_base
     
     # 3) Parse expert deterministic return (horizontal line)
@@ -315,7 +319,7 @@ def process_environment(env_name: str):
         if color is None:
             color = next(plt.gca()._get_lines.prop_cycler)['color']
         
-        df_base = df_base.sort_values('Itration')
+        df_base = df_base.sort_values('episode')
         
         # -- Smoothing step (rolling average) --
         df_base['smoothed_return'] = (
@@ -323,7 +327,7 @@ def process_environment(env_name: str):
         )
         
         plt.plot(
-            df_base['Itration'] * 5000,  # << convert to episode
+            df_base['episode'],  # << convert to episode
             df_base['smoothed_return'],  # << use smoothed data
             label=f"Baseline: {baseline_name}", 
             linestyle='-.',
