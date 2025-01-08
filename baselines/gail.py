@@ -170,3 +170,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+# python -m baselines.gail --env_name Ant-v5 --num_expert_trajs 16 

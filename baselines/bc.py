@@ -86,7 +86,6 @@ def mse_bc(sac_agent, expert_states, expert_actions, epochs = 100):
 
 
 
-
 if __name__ == "__main__":
     yaml = YAML()
     v = yaml.load(open(sys.argv[1]))
