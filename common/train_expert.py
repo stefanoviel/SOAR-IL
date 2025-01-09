@@ -54,14 +54,15 @@ def evaluate_policy(policy, env, n_episodes, deterministic=False):
         ret = 0
         for t in range(env_T):
             action = policy(obs, deterministic)
-            obs, rew, _, _, _ = env.step(action) # NOTE: assume rew=0 after done=True for evaluation
+            obs, rew, done, _, _ = env.step(action) # NOTE: assume rew=0 after done=True for evaluation
             expert_states[n, t, :] = torch.from_numpy(obs).clone()
             expert_actions[n, t, :] = torch.from_numpy(action).clone()
             ret += rew
+            if done:
+                break
         returns.append(ret)
     
     return expert_states, expert_actions, np.array(returns)
-
 
 
 if __name__ == "__main__":

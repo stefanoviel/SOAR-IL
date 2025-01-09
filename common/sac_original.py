@@ -355,8 +355,10 @@ class SAC:
             obs = np.zeros((self.max_ep_len, o.shape[0]))
             for t in range(self.max_ep_len):
                 # Take deterministic actions at test time?
-                o, _, _, _, _ = self.test_env.step(self.get_action(o, True))
+                o, _, done, _, _ = self.test_env.step(self.get_action(o, True))
                 obs[t] = o.copy()
+                if done:
+                    break
             obs = torch.FloatTensor(obs).to(self.device)[:, self.reward_state_indices]
             avg_ep_return += self.reward_function(obs).sum() # (T, d) -> (T)
         return avg_ep_return/self.num_test_episodes
