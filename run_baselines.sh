@@ -14,8 +14,9 @@ envs=(
 
 # List of algorithms
 algorithms=(
-    "gail"
-    "airl"
+    # "gail"
+    # "airl"
+    "sqil"
     # Add more algorithms here if needed
 )
 

@@ -1,217 +1,300 @@
-import os
-import argparse
-import datetime
-import dateutil.tz
-
 import numpy as np
 import torch
-import gymnasium as gym
+import time
+from copy import deepcopy
 
+# We assume you already have:
+from common.sac_original import SAC, ReplayBuffer
+# from your_code import MLPActorCritic  # or whatever you use for actor_critic
+import gymnasium as gym 
+
+import argparse
+import os
+import datetime
+import dateutil.tz
+import random
+from ruamel.yaml import YAML
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
+import csv
 
-# Stable Baselines3
-from stable_baselines3 import SAC
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.buffers import ReplayBuffer
 
-# Imitation library function to load pre-saved demonstrations
-from baselines.util import load_expert_trajectories_imitation
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Train SQIL on a MuJoCo env from raw .pt expert data.")
-    parser.add_argument("--env_name", type=str, default="Ant-v5",
-                        help="MuJoCo Gym environment ID, e.g. Ant-v5.")
-    parser.add_argument("--num_expert_trajs", type=int, default=5,
-                        help="Number of expert episodes to use.")
-    parser.add_argument("--train_steps", type=int, default=1_000_000,
-                        help="Number of training timesteps.")
-    parser.add_argument("--eval_episodes", type=int, default=10,
-                        help="Number of evaluation episodes.")
-    parser.add_argument("--eval_freq", type=int, default=5000,
-                        help="Frequency (in timesteps) of policy evaluation.")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="Random seed for reproducibility.")
-    return parser.parse_args()
+class SQIL(SAC):
+    def __init__(
+        self,
+        env_fn,
+        replay_buffer,
+        demonstrations,
+        log_folder,
+        **kwargs
+    ):
+        """
+        SQIL Implementation on top of SAC.
+        
+        Args:
+            demonstrations: list or array of expert transitions (s, a, r, s', d).
+                            We will overwrite r=1 for these transitions.
+            All other arguments are the same as in SAC.
+        """
 
-class ZeroRewardEnv(gym.RewardWrapper):
-    """
-    Wraps a Gym environment to override rewards with 0.
-    This ensures that the agent receives *no real environment reward*,
-    so it must rely on demonstration-based rewards for SQIL.
-    """
-    def reward(self, reward):
-        return 0.0
+        # Step 1: Initialize the SAC agent
+        super().__init__(
+            env_fn=env_fn,
+            replay_buffer=replay_buffer,
+            **kwargs
+        )
 
-def main():
-    args = parse_args()
-    device = 'cuda:3' if torch.cuda.is_available() else 'cpu'
-    
-    # Logging directory
-    now = datetime.datetime.now(dateutil.tz.tzlocal())
-    log_dir = f"logs/{args.env_name}/exp-{args.num_expert_trajs}/sqil/{args.num_expert_trajs}/" + now.strftime('%Y_%m_%d_%H_%M_%S')
-    os.makedirs(log_dir, exist_ok=True)
-    writer = SummaryWriter(log_dir=log_dir)
+        # Step 2: Pre-fill the replay buffer with demonstration data (reward=1)
+        self.log_folder = log_folder
+        self._store_demonstrations(demonstrations)
 
-    # Create a VecEnv but with zeroed-out rewards
-    def make_env():
-        env = gym.make(args.env_name)
-        env = ZeroRewardEnv(env)
-        return env
-    venv = DummyVecEnv([make_env])  # vectorized env with a single subprocess
+    def _store_demonstrations(self, demonstrations):
+        """
+        Store demonstration transitions in the replay buffer with reward=1.
+        demonstrations is expected to be an iterable (s, a, r, s_next, done).
+        For SQIL, we override r=1. 
+        """
+        for (s, a, _, s_next, done) in demonstrations:
+            # Force reward=1 for expert transitions
+            rew = 1.0
+            self.replay_buffer.store(s, a, rew, s_next, done)
 
-    # ---------------------------
-    # 1) Load demonstrations
-    # ---------------------------
-    demonstrations = load_expert_trajectories_imitation(
-        args.env_name, 
-        args.num_expert_trajs
-    )
-    # demonstrations is a list of `imitation.data.types.Trajectory` objects
+        print(f"Loaded {len(demonstrations)} demonstration transitions into buffer.")
 
-    # ---------------------------
-    # 2) Create an off-policy RL algorithm
-    #    We'll use SAC for continuous control
-    # ---------------------------
-    model = SAC(
-        policy="MlpPolicy",
-        env=venv,
-        seed=args.seed,
-        device=device,
-        verbose=0,
-        # You could tweak various hyperparams here
-    )
+    def test_agent(self, n_eval_episodes=5, max_ep_len=None):
+        """
+        Evaluate the current policy with the real reward.
+        
+        Args:
+            n_eval_episodes (int): How many episodes to run
+            max_ep_len (int): Max steps per episode (optional)
 
-    # ---------------------------
-    # 3) Create a single ReplayBuffer
-    #    3a) Fill it with demonstration transitions (reward=1)
-    #    3b) We'll keep adding env transitions (reward=0) in training
-    # ---------------------------
-    # Determine buffer capacity. Typically, you want a large buffer,
-    # but for demonstration, let's do something modest:
-    buffer_size = 1_000_000
-    replay_buffer = ReplayBuffer(
-        buffer_size=buffer_size,
-        observation_space=venv.observation_space,
-        action_space=venv.action_space,
-        device=device,
-        optimize_memory_usage=False,
-    )
-
-    # 3a) Fill with demonstration transitions => reward=1
-    for traj in demonstrations:
-        for i in range(len(traj.obs) - 1):
-            obs = traj.obs[i]
-            act = traj.acts[i]
-            next_obs = traj.obs[i+1]
-            done = False
-            # SQIL: demonstration transitions = reward=1
-            reward = 1.0
-            replay_buffer.add(
-                obs=obs,
-                next_obs=next_obs,
-                action=act,
-                reward=reward,
-                done=done,
-                infos=[{}]  # <-- list of length 1 (or some other info dict)
-            )
-
-    print(f"Added {replay_buffer.size()} demonstration transitions to the replay buffer.")
-
-    # ---------------------------
-    # 4) SQIL training loop
-    #    We'll do manual training, so we can interleave:
-    #      - env rollout (with reward=0)
-    #      - off-policy updates on the combined buffer
-    # ---------------------------
-    total_timesteps = 0
-    eval_count = 0
-    next_eval = args.eval_freq
-
-    # Keep track of the last observation for each env in the vectorized environment
-    obs_array = venv.reset()
-
-    # Simple helper function for evaluation
-    def evaluate_policy(n_episodes=5):
+        Returns:
+            average_return (float): The average cumulative reward 
+                                    over the evaluation episodes.
+        """
         returns = []
-        for _ in range(n_episodes):
+        for _ in range(n_eval_episodes):
+            o, info = self.test_env.reset()
+            
+            ep_ret = 0
+            ep_len = 0
             done = False
-            obs = venv.reset()
-            ep_ret = 0.0
             while not done:
-                action, _ = model.predict(obs, deterministic=True)
-                obs, rew, dones, infos = venv.step(action)
-                ep_ret += rew[0]
-                done = dones[0]
+                # Use the current policy
+                a = self.get_action(o)
+                o, r, done, truncated, _ = self.test_env.step(a)
+                
+                ep_ret += r
+                ep_len += 1
+                if max_ep_len and (ep_len >= max_ep_len):
+                    # if we have a hard limit for steps
+                    break
+            
             returns.append(ep_ret)
-        return np.mean(returns), returns
+        average_return = float(np.mean(returns))
+        return average_return
+    
+    def learn_sqil(self, total_steps,  print_out=False):
 
-    # Evaluate untrained
-    mean_rew, _ = evaluate_policy(args.eval_episodes)
-    print(f"[Before Training] Mean Return: {mean_rew:.2f}")
-    writer.add_scalar("eval/untrained_mean_return", mean_rew, total_timesteps)
+        start_time = time.time()
 
-    # We’ll do the training in a loop:
-    #   collect env transitions -> set reward=0 -> add to buffer -> train
-    max_episode_steps = 1000  # You can adjust or read from env.spec
-    with tqdm(total=args.train_steps, desc="Training SQIL") as pbar:
-        while total_timesteps < args.train_steps:
-            # 1) Roll out a single step in the environment
-            action, _ = model.predict(obs_array, deterministic=False)
-            next_obs_array, rew_array, dones_array, infos_array = venv.step(action)
+        # Create (or overwrite) the CSV in the current log folder.
+        # We assume your agent has a reference to `self.log_folder`, 
+        # or you can pass it in as an argument. If not, 
+        # pass it in from outside or store it somewhere accessible.
+        csv_path = os.path.join(self.log_folder, 'progress.csv')
+        with open(csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            # Write the header
+            writer.writerow(["episode", "Real Det Return"])
+        
+        o, info = self.env.reset(seed=self.seed)
+        current_seed = self.seed
+        ep_len = 0
 
-            # *SQIL step*: environment transitions => reward=0
-            for i in range(len(obs_array)):
-                obs = obs_array[i]
-                act = action[i]
-                next_obs = next_obs_array[i]
-                done = dones_array[i]
-                reward = 0.0  # Zero for environment transitions
-                replay_buffer.add(obs, next_obs, act, reward, float(done), infos=[{}])
+        print(f"Training SQIL agent with total steps {total_steps:d}.")
+        test_rets = []
+        alphas = []
+        log_pis = []
+        test_time_steps = []
 
-            obs_array = next_obs_array
+        for t in range(total_steps):
+            # (1) Collect actions
+            if self.replay_buffer.size > self.start_steps:
+                a = self.get_action(o)
+            else:
+                a = self.env.action_space.sample()
 
-            # If done, reset
-            for i, done in enumerate(dones_array):
-                if done:
-                    obs_array[i] = venv.reset()[i]
+            # (2) Step in the env with reward=0 for on-policy transitions
+            o2, r_env, done, _, _ = self.env.step(a)
+            rew = 0.0
+            ep_len += 1
+            self.replay_buffer.store(o, a, rew, o2, done)
+            o = o2
 
-            total_timesteps += 1
-            pbar.update(1)
+            # (3) Handle terminal
+            time_out = (ep_len == self.max_ep_len)
+            terminal = done or time_out
+            if terminal:
+                current_seed += 1
+                o, info = self.env.reset(seed=current_seed)
+                ep_len = 0
 
-            # 2) Off-policy training step
-            # By default, SB3’s SAC calls `train()` automatically when `.learn()` is called,
-            # but we want more control, so we do it manually via private methods.
-            # A simpler approach is to just call `.learn(total_timesteps, ...)`,
-            # but that will handle exploration and training in the usual SB3 loop.
-            # Instead, we do:
-            if replay_buffer.size() > model.batch_size:
-                model.agent.train_frequency = 1  # ensures training each step
-                model.gradient_steps = 1  # train for 1 gradient step
-                # Prepare a batch from the replay buffer
-                replay_data = replay_buffer.sample(model.batch_size)
-                train_logs = model.agent.train(replay_data)
-                for k, val in train_logs.items():
-                    if isinstance(val, float) or isinstance(val, int):
-                        writer.add_scalar(f"train/{k}", val, total_timesteps)
+            # (4) SAC updates
+            if t >= self.update_after and t % self.update_every == 0:
+                for _ in range(self.update_every):
+                    batch = self.replay_buffer.sample_batch(self.batch_size)
+                    loss_q, loss_pi, log_pi = self.update(batch)
 
-            # 3) Evaluate periodically
-            if total_timesteps >= next_eval:
-                mean_rew, returns = evaluate_policy(args.eval_episodes)
-                writer.add_scalar("eval/mean_return", mean_rew, total_timesteps)
-                print(f"[Evaluation @ {total_timesteps} steps] Mean Return: {mean_rew:.2f}")
-                eval_count += 1
-                next_eval += args.eval_freq
+            # (5) Logging & evaluation
+            if (t + 1) % self.log_step_interval == 0:
+                n_eval_episodes = 5
+                eval_return = self.test_agent(n_eval_episodes=n_eval_episodes,
+                                            max_ep_len=self.max_ep_len)
+                print(f"[{t+1}/{total_steps}] Evaluation over {n_eval_episodes} episodes: "
+                    f"Avg return = {eval_return:.2f}")
+                
+                # Append result to CSV
+                with open(csv_path, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([t+1, eval_return])
+                
+                test_rets.append(eval_return)
+                test_time_steps.append(t + 1)
 
-    # Final evaluation
-    mean_rew, _ = evaluate_policy(args.eval_episodes)
-    print(f"[After Training] Mean Return: {mean_rew:.2f}")
-    writer.add_scalar("eval/trained_mean_return", mean_rew, total_timesteps)
+        print(f"Done SQIL training. Elapsed: {time.time() - start_time:.2f}s.")
+        return test_rets, alphas, log_pis, test_time_steps
+
+
+def setup_experiment_seed(seed):
+    """Centralized seed setup for the entire experiment."""
+    # Python built-in
+    random.seed(seed)
+    # NumPy
+    np.random.seed(seed)
+    # PyTorch
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        # For full reproducibility (slower):
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    return np.random.RandomState(seed)
+
+
+
+if __name__ == "__main__":
+    # ------------------------------------------------------
+    # 1) Parse arguments
+    # ------------------------------------------------------
+    parser = argparse.ArgumentParser(description='SQIL Training Script')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='Random seed')
+    parser.add_argument('--expert_episodes', type=int, default=1,
+                        help='Number of expert trajectories to load')
+    parser.add_argument("--train_steps", type=int, default=1_500_000) 
+    parser.add_argument('--env_name', type=str, default='Hopper-v5',
+                        help='Gym environment name')
+    parser.add_argument('--cuda', type=int, default=-1,
+                        help='CUDA device index (set < 0 for CPU)')
+    parser.add_argument('--log_dir', type=str, default='logs',
+                        help='Directory for logs')
+    args = parser.parse_args()
+
+    # ------------------------------------------------------
+    # 2) Set up seeds, device, logging
+    # ------------------------------------------------------
+    rng = setup_experiment_seed(args.seed)
+
+    # Device
+    device = torch.device(
+        f"cuda:{args.cuda}"
+        if torch.cuda.is_available() and args.cuda >= 0
+        else "cpu"
+    )
+    print("Using device:", device)
+
+    # Logging
+    env_name = args.env_name
+    num_expert_trajs = args.expert_episodes
+
+    exp_id = f"{args.log_dir}/{env_name}/exp-{num_expert_trajs}/sqil"
+    if not os.path.exists(exp_id):
+        os.makedirs(exp_id)
+
+    now = datetime.datetime.now(dateutil.tz.tzlocal())
+    log_folder = os.path.join(
+        exp_id, now.strftime('%Y_%m_%d_%H_%M_%S') + f"_seed{args.seed}"
+    )
+    writer = SummaryWriter(log_folder)
+    print(f"Logging to directory: {log_folder}")
+
+    # ------------------------------------------------------
+    # 3) Create environment
+    # ------------------------------------------------------
+    env_fn = lambda: gym.make(env_name)
+    env = env_fn()
+    env.reset(seed=args.seed)  # or rng.randint(2**32-1)
+    state_size = env.observation_space.shape[0]
+    action_size = env.action_space.shape[0]
+
+    # For demonstration, we do not filter any state indices.
+    # If you still need to subset states, you can parse them from CLI too.
+    state_indices = list(range(state_size))
+
+    # ------------------------------------------------------
+    # 4) Load expert data (states + actions)
+    # ------------------------------------------------------
+    # load expert samples from trained policy
+    expert_trajs = torch.load(f'expert_data/states/{env_name}.pt').numpy()[:, :, state_indices]
+    expert_trajs = expert_trajs[:num_expert_trajs, :, :] # select first expert_episodes
+    expert_samples = expert_trajs.copy().reshape(-1, len(state_indices))
+    print(expert_trajs.shape, expert_samples.shape) # ignored starting state
+
+    # load expert actions
+    expert_a = torch.load(f'expert_data/actions/{env_name}.pt').numpy()[:, :, :]
+    expert_a = expert_a[:num_expert_trajs, :, :] # select first expert_episodes
+    expert_a_samples = expert_a.copy().reshape(-1, action_size)
+    expert_samples_sa=np.concatenate([expert_samples,expert_a_samples],1)
+    print(expert_trajs.shape, expert_samples_sa.shape) # ignored starting state
+
+    demonstration_data = []
+    N, T, _ = expert_trajs.shape
+    for traj_idx in range(N):
+        for t in range(T - 1):
+            s  = expert_trajs[traj_idx, t]
+            a  = expert_a[traj_idx, t]
+            s2 = expert_trajs[traj_idx, t + 1]
+            done = 0.0  
+            demonstration_data.append((s, a, 0.0, s2, done))  # reward=0 it will get overriden later
+
+    # ------------------------------------------------------
+    # 5) Create SQIL agent
+    # ------------------------------------------------------
+    replay_buffer = ReplayBuffer(
+        obs_dim=state_size,
+        act_dim=action_size,
+        device=device,
+        size=int(1e6),
+    )
+
+    sqil_agent = SQIL(
+        env_fn=env_fn,
+        replay_buffer=replay_buffer,
+        demonstrations=demonstration_data,
+        log_folder=log_folder,
+    )
+
+    # ------------------------------------------------------
+    # 6) Train the SQIL agent
+    # ------------------------------------------------------
+    t_start = time.time()
+    returns, alphas, log_pis, timesteps = sqil_agent.learn_sqil(args.train_steps, print_out=True)
+    print(f"Done SQIL training in {time.time() - t_start:.1f}s.")
+
 
     writer.close()
 
-if __name__ == "__main__":
-    main()
 
-
-# python -m baselines.sqil --env_name Ant-v5 --num_expert_trajs 16 
+# python -m baselines.sqil_my_sac --env_name Hopper-v5  --expert_episodes 16
