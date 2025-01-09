@@ -191,7 +191,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='SQIL Training Script')
     parser.add_argument('--seed', type=int, default=0,
                         help='Random seed')
-    parser.add_argument('--expert_episodes', type=int, default=1,
+    parser.add_argument('--num_expert_trajs', type=int, default=1,
                         help='Number of expert trajectories to load')
     parser.add_argument("--train_steps", type=int, default=1_500_000) 
     parser.add_argument('--env_name', type=str, default='Hopper-v5',
@@ -217,7 +217,7 @@ if __name__ == "__main__":
 
     # Logging
     env_name = args.env_name
-    num_expert_trajs = args.expert_episodes
+    num_expert_trajs = args.num_expert_trajs
 
     exp_id = f"{args.log_dir}/{env_name}/exp-{num_expert_trajs}/sqil"
     if not os.path.exists(exp_id):
@@ -297,4 +297,4 @@ if __name__ == "__main__":
     writer.close()
 
 
-# python -m baselines.sqil_my_sac --env_name Hopper-v5  --expert_episodes 16
+# python -m baselines.sqil_my_sac --env_name Hopper-v5  --num_expert_trajs 16
