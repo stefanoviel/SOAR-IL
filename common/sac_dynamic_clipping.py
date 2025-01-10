@@ -688,7 +688,6 @@ class SAC:
                 local_time = time.time()
 
 
-
         # After we finish all steps, we log the final clip value:
         print("len(trajectory_returns)", len(trajectory_returns), "self.writer", self.writer)
         if len(trajectory_returns) > 0 and self.writer is not None:

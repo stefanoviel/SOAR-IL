@@ -16,7 +16,7 @@ import random
 from ruamel.yaml import YAML
 from torch.utils.tensorboard import SummaryWriter
 import csv
-
+from tqdm import tqdm
 
 
 class SQIL(SAC):
@@ -143,16 +143,19 @@ class SQIL(SAC):
 
             # (4) SAC updates
             if t >= self.update_after and t % self.update_every == 0:
-                for _ in range(self.update_every):
+                start = time.time()
+                for _ in (range(self.update_every)):
                     batch = self.replay_buffer.sample_batch(self.batch_size)
                     loss_q, loss_pi, log_pi = self.update(batch)
 
+                print('Time:', time.time() - start)
+                print(f"[{t+1}/{total_steps}] Loss Pi: {loss_pi:.2f}, Loss Q: {loss_q:.2f}, Log Pi: {log_pi:.2f}")
+
             # (5) Logging & evaluation
             if (t + 1) % self.log_step_interval == 0:
-                n_eval_episodes = 5
-                eval_return = self.test_agent(n_eval_episodes=n_eval_episodes,
+                eval_return = self.test_agent(n_eval_episodes=self.num_test_episodes,
                                             max_ep_len=self.max_ep_len)
-                print(f"[{t+1}/{total_steps}] Evaluation over {n_eval_episodes} episodes: "
+                print(f"[{t+1}/{total_steps}] Evaluation over {self.num_test_episodes} episodes: "
                     f"Avg return = {eval_return:.2f}")
                 
                 # Append result to CSV
@@ -284,6 +287,19 @@ if __name__ == "__main__":
         replay_buffer=replay_buffer,
         demonstrations=demonstration_data,
         log_folder=log_folder,
+        k=1,
+        epochs=5,
+        log_step_interval=5000,
+        update_every=1,
+        random_explore_episodes=1,
+        update_num=1,
+        batch_size=100,
+        lr=0.001,
+        alpha=0.2,
+        automatic_alpha_tuning=False,
+        buffer_size=1000000,
+        num_test_episodes=10,
+        reinitialize=False
     )
 
     # ------------------------------------------------------
@@ -297,4 +313,4 @@ if __name__ == "__main__":
     writer.close()
 
 
-# python -m baselines.sqil_my_sac --env_name Hopper-v5  --num_expert_trajs 16
+# python -m baselines.sqil --env_name Hopper-v5  --num_expert_trajs 16

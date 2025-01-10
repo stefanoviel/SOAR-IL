@@ -437,7 +437,6 @@ class SAC:
                 )
                 # a = self.env.action_space.sample()
 
-
             # Step the env
             o2, r, d, _, _ = self.env.step(a)
 

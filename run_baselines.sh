@@ -6,10 +6,10 @@ mkdir -p outputs
 # List of environments
 envs=(
     "Hopper-v5"
-    # "HalfCheetah-v5"
-    # "Humanoid-v5"
-    # "Walker2d-v5"
-    # "Ant-v5"
+    "HalfCheetah-v5"
+    "Humanoid-v5"
+    "Walker2d-v5"
+    "Ant-v5"
 )
 
 # List of algorithms

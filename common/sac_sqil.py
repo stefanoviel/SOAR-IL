@@ -8,12 +8,10 @@ import itertools
 import numpy as np
 import torch
 from torch.optim import Adam
-# import pdb
-import gymnasium as gym
+import gym
 import time
 import sys
 import common.sac_agent as core
-import random
 
 def combined_shape(length, shape=None):
     if shape is None:
@@ -37,13 +35,6 @@ class ReplayBuffer:
         self.ptr, self.size, self.max_size = 0, 0, size
         self.device = device
         # print(device)
-        self.rng = np.random.RandomState()
-
-    def set_seed(self, seed):
-        """Improved seeding for replay buffer"""
-        self.rng = np.random.RandomState(seed)
-        # If using PyTorch for sampling, also set its seed
-        torch.manual_seed(seed)
 
     def store_batch(self, obs, act, rew, next_obs, done):
         num = len(obs)
@@ -76,8 +67,7 @@ class ReplayBuffer:
         self.size = min(self.size+1, self.max_size)
 
     def sample_batch(self, batch_size=32):
-        """Update sampling to use seeded RNG"""
-        idxs = self.rng.randint(0, self.size, size=batch_size)
+        idxs = np.random.randint(0, self.size, size=batch_size)
         batch = dict(obs=self.state[idxs],
                      obs2=self.next_state[idxs],
                      act=self.action[idxs],
@@ -94,9 +84,7 @@ class SAC:
             update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
             log_step_interval=None, reward_state_indices=None,
             save_freq=1, device=torch.device("cpu"), automatic_alpha_tuning=True, reinitialize=True,
-            num_q_pairs=3, uncertainty_coef=1.0, q_std_clip=1.0,  # Add q_std_clip parameter
-            use_actions_for_reward=False, **kwargs):
-
+            **kwargs):
         """
         Soft Actor-Critic (SAC)
 
@@ -157,8 +145,8 @@ class SAC:
                 networks. Target networks are updated towards main networks 
                 according to:
 
-                .. math:: \\theta_{\\\text{targ}} \\leftarrow 
-                    \\rho \\theta_{\\\text{targ}} + (1-\\\rho) \\theta
+                .. math:: \\theta_{\\text{targ}} \\leftarrow 
+                    \\rho \\theta_{\\text{targ}} + (1-\\rho) \\theta
 
                 where :math:`\\rho` is polyak. (Always between 0 and 1, usually 
                 close to 1.)
@@ -192,19 +180,19 @@ class SAC:
             save_freq (int): How often (in terms of gap between epochs) to save
                 the current policy and value function.
 
-            q_std_clip (float): Maximum value to clip Q-value standard deviations. Default: 1.0
         """
 
-
-        
         self.env, self.test_env = env_fn(), env_fn()
+        # Set seeds during reset instead of env.seed()
+        self.seed = seed
+        self.env.reset(seed=seed)
+        self.test_env.reset(seed=seed+1)
         self.obs_dim = self.env.observation_space.shape
         self.act_dim = self.env.action_space.shape[0]
         self.max_ep_len=max_ep_len
         self.start_steps=start_steps
         self.batch_size=batch_size
-        self.gamma=gamma    
-        self.use_actions_for_reward = use_actions_for_reward
+        self.gamma=gamma
         
         self.polyak=polyak
         # Action limit for clamping: critically, assumes all dimensions share the same bound!
@@ -215,36 +203,25 @@ class SAC:
         self.udpate_num = update_num
         self.num_test_episodes = num_test_episodes
         self.epochs = epochs
-        # Create actor-critic module and set its seed
-        self.ac = actor_critic(self.env.observation_space, self.env.action_space, k, 
-                             add_time=add_time, device=device, num_q_pairs=num_q_pairs, **ac_kwargs)
-        self.ac.set_seed(seed)
-        
-        # Create target networks and set their seeds
+        # Create actor-critic module and target networks
+        self.ac = actor_critic(self.env.observation_space, self.env.action_space, k, add_time=add_time, device=device, **ac_kwargs)
         self.ac_targ = deepcopy(self.ac)
-        self.ac_targ.set_seed(seed + 1)  # Use different seed for target network
 
-        # Freeze target networks with respect to optimizers
+        # Freeze target networks with respect to optimizers (only update via polyak averaging)
         for p in self.ac_targ.parameters():
             p.requires_grad = False
-
-        # pdb.set_trace()
             
-        # Create separate optimizers for each Q-network pair
-        self.q_optimizers = [Adam(pair_params, lr=lr) 
-                           for pair_params in self.ac.q_params_list]
-
         # List of parameters for both Q-networks (save this for convenience)
         self.q_params = itertools.chain(self.ac.q1.parameters(), self.ac.q2.parameters())
 
         # Experience buffer
         self.replay_buffer = replay_buffer
-        self.replay_buffer.set_seed(seed)
 
         # Count variables (protip: try to get a feel for how different size networks behave!)
         self.var_counts = tuple(count_vars(module) for module in [self.ac.pi, self.ac.q1, self.ac.q2])
         # Set up optimizers for policy and q-function
         self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=lr)
+        self.q_optimizer = Adam(self.q_params, lr=lr)
 
         self.device = device
 
@@ -269,108 +246,63 @@ class SAC:
 
         self.test_fn = self.test_agent
 
-        self.uncertainty_coef = uncertainty_coef  # Store the coefficient
-        self.q_std_clip = q_std_clip  # Store the clipping value
-
-
-        # Add comprehensive seeding at initialization
-        self.seed = seed
-        self._setup_seeds(seed)
-
-    def _setup_seeds(self, seed):
-        """Centralized seed setup for reproducibility"""
-        
-        # Set seeds for PyTorch
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        
-        # Set seeds for NumPy
-        np.random.seed(seed)
-        
-        # Set seeds for Python's random
-        random.seed(seed)
-        
-        # Set seeds for environments
-        self.env.reset(seed=seed)
-        self.test_env.reset(seed=seed+10000)
-        
-        # Set seeds for replay buffer and networks
-        self.replay_buffer.set_seed(seed)
-        self.ac.set_seed(seed)
-        self.ac_targ.set_seed(seed+1)
-
-        self.action_rng = np.random.RandomState(seed)
-
-
     # Set up function for computing SAC Q-losses
-    def compute_loss_q(self, data, q_idx):
-        """Compute Q-loss for a specific pair of Q-networks"""
+    def compute_loss_q(self,data):
         o, a, r, o2, d = data['obs'], data['act'], data['rew'], data['obs2'], data['done']
 
-        q1 = self.ac.q1_list[q_idx](o, a)
-        q2 = self.ac.q2_list[q_idx](o, a)
+        q1 = self.ac.q1(o,a)
+        q2 = self.ac.q2(o,a)
 
         # Bellman backup for Q functions
         with torch.no_grad():
             # Target actions come from *current* policy
             a2, logp_a2 = self.ac.pi(o2[:, :self.true_state_dim])
 
-            # Target Q-values from c/home/viel/f-IRL/logs/Ant-v5/exp-16/maxentirl/2024_12_28_17_39_11_q1_seed0_qstd1.0orresponding target network pair
-            q1_pi_targ = self.ac_targ.q1_list[q_idx](o2, a2)
-            q2_pi_targ = self.ac_targ.q2_list[q_idx](o2, a2)
+            # Target Q-values
+            q1_pi_targ = self.ac_targ.q1(o2, a2)
+            q2_pi_targ = self.ac_targ.q2(o2, a2)
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + self.gamma * (1 - d) * (q_pi_targ - self.alpha * logp_a2)
 
         # MSE loss against Bellman backup
         loss_q1 = ((q1 - backup)**2).mean()
         loss_q2 = ((q2 - backup)**2).mean()
-        return loss_q1 + loss_q2
+        loss_q = loss_q1 + loss_q2
+
+        return loss_q
 
     # Set up function for computing SAC pi loss
-    def compute_loss_pi(self, data):
+    def compute_loss_pi(self,data):
+
+        # what is the relation between q and the policy? 
         o = data['obs']
         pi, logp_pi = self.ac.pi(o[:, :self.true_state_dim])
-        
-        # Get Q-values from all networks
-        q1_vals = [q1(o, pi) for q1 in self.ac.q1_list]
-        q2_vals = [q2(o, pi) for q2 in self.ac.q2_list]
-        
-        # Compute mean and std of minimum Q-values
-        q_mins = [torch.min(q1, q2) for q1, q2 in zip(q1_vals, q2_vals)]
-        q_mean = torch.mean(torch.stack(q_mins, dim=0), dim=0)
-        
-        if len(q_mins) > 1:
-            q_std = torch.clamp(torch.std(torch.stack(q_mins, dim=0), dim=0), 0, self.q_std_clip)  # Use self.q_std_clip
-            exploration_bonus = self.uncertainty_coef * q_std
-        else:
-            exploration_bonus = 0
+        q1_pi = self.ac.q1(o, pi)
+        q2_pi = self.ac.q2(o, pi)
+        q_pi = torch.min(q1_pi, q2_pi)
 
-        
-        # Use mean + exploration bonus in policy loss
-        # By minimizing the log probability of all the actions, we are maximizing the entropy of the policy.
-        loss_pi = (self.alpha * logp_pi - (q_mean + exploration_bonus)).mean()
+        # Entropy-regularized policy loss
+        # the policy is updated to maximize the expected return (from the quality of the action) and minimize the entropy of the policy????
+        loss_pi = (self.alpha * logp_pi - q_pi).mean()
+
         return loss_pi, logp_pi
 
 
     # Set up model saving
-    def update(self, data):
-        # Update each Q-network pair with different batches
-        losses_q = []
-        for i in range(len(self.ac.q1_list)):
-            batch = self.replay_buffer.sample_batch(self.batch_size)
-            self.q_optimizers[i].zero_grad()
-            loss_q = self.compute_loss_q(batch, i)
-            loss_q.backward()
-            self.q_optimizers[i].step()
-            losses_q.append(loss_q.item())
+    def update(self,data):
+        # called by adv IRL
+        # First run one gradient descent step for Q1 and Q2
+        self.q_optimizer.zero_grad()
+        loss_q = self.compute_loss_q(data)
+        loss_q.backward()
+        self.q_optimizer.step()
 
-        # Freeze Q-networks
-        for params in self.ac.q_params_list:
-            for p in params:
-                p.requires_grad = False
+        # Freeze Q-networks so you don't waste computational effort 
+        # computing gradients for them during the policy learning step.
+        for p in self.q_params:
+            p.requires_grad = False
 
-        # Update policy
+        # Next run one gradient descent step for pi.
         self.pi_optimizer.zero_grad()
         loss_pi, log_pi = self.compute_loss_pi(data)
         loss_pi.backward()
@@ -385,20 +317,18 @@ class SAC:
 
             self.alpha = self.log_alpha.exp()
 
-        # Unfreeze Q-networks
-        for params in self.ac.q_params_list:
-            for p in params:
-                p.requires_grad = True
+        # Unfreeze Q-networks so you can optimize it at next DDPG step.
+        for p in self.q_params:
+            p.requires_grad = True
 
-        # Update target networks
+        # Finally, update target networks by polyak averaging.
         with torch.no_grad():
             for p, p_targ in zip(self.ac.parameters(), self.ac_targ.parameters()):
                 # NB: We use an in-place operations "mul_", "add_" to update target
                 # params, as opposed to "mul" and "add", which would make new tensors.
                 p_targ.data.mul_(self.polyak)
                 p_targ.data.add_((1 - self.polyak) * p.data)
-
-        return np.array([np.mean(losses_q), loss_pi.item(), log_pi.detach().cpu().mean().item()])
+        return np.array([loss_q.item(), loss_pi.item(), log_pi.detach().cpu().mean().item()])
 
     def get_action(self, o, deterministic=False, get_logprob=False):
         if len(o.shape) < 2:
@@ -414,35 +344,23 @@ class SAC:
 
 
     def reset(self):
-        """Reset random number generators"""
-        if hasattr(self, 'seed'):
-            self.ac.set_seed(self.seed)
-            self.ac_targ.set_seed(self.seed + 1)
-            self.replay_buffer.set_seed(self.seed)
+        pass
 
     def test_agent(self):
-        avg_ep_return = 0.
-        test_seed_offset = 10000  # Use different seed range for testing
-        
+        # NOTE: drawback, didn't use task reward!
+
+        avg_ep_return  = 0.
         for j in range(self.num_test_episodes):
-            test_seed = self.seed + test_seed_offset + j
-            o, info = self.test_env.reset(seed=test_seed)
+            o, info = self.test_env.reset(seed=self.seed+j)
             obs = np.zeros((self.max_ep_len, o.shape[0]))
-            acts = np.zeros((self.max_ep_len, self.act_dim))
             for t in range(self.max_ep_len):
                 # Take deterministic actions at test time?
-                o, a, _, _, _ = self.test_env.step(self.get_action(o, True))
+                o, r, done, _, _ = self.test_env.step(self.get_action(o, True))
                 obs[t] = o.copy()
-                acts[t] = a.copy()
-            obs = torch.FloatTensor(obs).to(self.device)[:, self.reward_state_indices]
-            acts = torch.FloatTensor(acts).to(self.device)
-            # Concatenate states and actions before passing to reward function
-            if self.use_actions_for_reward:
-                combined_input = torch.cat([obs, acts], dim=1)
-                avg_ep_return += self.reward_function(combined_input).sum()
-            else:
-                avg_ep_return += self.reward_function(obs).sum()
-            
+                if done:
+                    break
+                avg_ep_return += r
+
         return avg_ep_return/self.num_test_episodes
 
     def test_agent_ori_env(self, deterministic=True):
@@ -482,58 +400,132 @@ class SAC:
 
         return ep_ret.mean(), log_pi.mean()
 
-   
+    def learn(self, print_out=False, n_parallel=1):
+        # only called by SMM-IRL
+        # Prepare for interaction with environment
+        total_steps = self.steps_per_epoch * self.epochs
+        start_time = time.time()
 
-    def sample_action(self):
-        """Sample a random action using seeded RNG"""
-        if isinstance(self.env.action_space, gym.spaces.box.Box):
-            return self.action_rng.uniform(
-                low=self.env.action_space.low,
-                high=self.env.action_space.high,
-                size=self.env.action_space.shape
-            )
-        else:
-            raise NotImplementedError("Only continuous action spaces supported")
-
-
-    # Learns from single trajectories rather than batch
-    def learn_mujoco(self, print_out=False, save_path=None):
-        # Reset all seeds at the start of training
-        self._setup_seeds(self.seed)
-        
-        # Use separate seed sequences for different aspects
-        train_seed_sequence = np.random.RandomState(self.seed)
-        eval_seed_sequence = np.random.RandomState(self.seed + 5000)
-        
-        # Initialize environment with base seed
+        # Initialize with base seed for all parallel environments
         o, info = self.env.reset(seed=self.seed)
-        
-        current_seed = self.seed
-        ep_len = 0
+        current_seeds = np.arange(self.seed, self.seed + n_parallel)
+        ep_len = np.ones(n_parallel).astype(np.int)
 
-        print(f"Training SAC for IRL agent: Total steps {self.steps_per_epoch * self.epochs:d}")
+        print(f"Training SAC for IRL agent: Total steps {total_steps:d}")
         # Main loop: collect experience in env and update/log each epoch
         test_rets = []
         alphas = []
         log_pis = []
         test_time_steps = []
-        local_time = time.time()
+
+        
+        for t in range(total_steps // n_parallel):
+            
+            # Until start_steps have elapsed, randomly sample actions
+            # from a uniform distribution for better exploration. Afterwards, 
+            # use the learned policy. 
+            if self.replay_buffer.size > self.start_steps:
+            # if t * n_parallel > self.start_steps:
+                # print("using policy to get actions")
+                a, _ = self.get_action_batch(o)
+                # a = self.get_action(o)
+                # print("Taking action from sac agent")
+            else:
+                # print("using random sample to get actions")
+                a = np.concatenate([self.env.action_space.sample() for i in range(n_parallel)]).reshape(
+                    n_parallel, self.env.action_space.shape[0]
+                )
+                # a = self.env.action_space.sample()
+
+            # Step the env
+            o2, r, d, _, _ = self.env.step(a)
+
+            ep_len += 1
+
+            # Ignore the "done" signal if it comes from hitting the time
+            # horizon (that is, when it's an artificial terminal signal
+            # that isn't based on the agent's state)
+            # important, assume all trajecotires are synchronized.
+            d = False # keep false for pointmass env. if np.any(ep_len==self.max_ep_len) else d
+
+
+            # Store experience to replay buffer
+            self.replay_buffer.store_batch(o, a, r, o2, d)
+            # self.replay_buffer.store(o, a, r, o2, d)
+
+
+            # Super critical, easy to overlook step: make sure to update 
+            # most recent observation!
+            o = o2
+
+            # End of trajectory handling with incremented seeds
+            if d or np.any(ep_len == self.max_ep_len):
+                # Update seeds for environments that need reset
+                current_seeds += n_parallel  # Increment by n_parallel to ensure unique seeds
+                o, info = self.env.reset(seed=current_seeds[0])  # Assuming vectorized env takes single seed
+                ep_len = np.ones(n_parallel).astype(np.int)
+
+            # Update handling
+            log_pi = 0
+            if self.reinitialize:
+                if (t * n_parallel) >= self.update_after and (t * n_parallel) % self.update_every == 0:
+                    for j in range(n_parallel):
+                        batch = self.replay_buffer.sample_batch(self.batch_size)
+                        _, _, log_pi = self.update(data=batch)
+                
+                    print("Update SAC agent")  
+
+            else:
+                if self.replay_buffer.size>=self.update_after and (t * n_parallel) % self.update_every == 0:
+                    for j in range(n_parallel):
+                        batch = self.replay_buffer.sample_batch(self.batch_size)
+                        obs = batch['obs'][:, self.reward_state_indices]
+                        batch['rew'] = torch.FloatTensor(self.reward_function(obs)).to(self.device)
+                        _, _, log_pi = self.update(data=batch)       
+
+                    print("Update SAC agent")  
+
+            # End of epoch handling
+            if (t * n_parallel) % self.log_step_interval == 0:
+                test_epret, log_pi = self.test_agent_batch()
+                if print_out:
+                    print(f"SAC Training | Evaluation: {test_epret:.3f} Timestep: {t+1:d}")
+
+                alphas.append(self.alpha.item() if self.automatic_alpha_tuning else self.alpha)
+                test_rets.append(test_epret)
+                log_pis.append(log_pi)
+                test_time_steps.append(t+1)
+        print(f"SAC Training End: time {time.time() - start_time:.0f}s")
+        return test_rets, alphas, log_pis, test_time_steps
+
+    # Learns from single trajectories rather than batch
+
+    def learn_mujoco(self, print_out=False, save_path=None):
+        # only called by SMM-IRL
+        # Prepare for interaction with environment
+        total_steps = self.steps_per_epoch * self.epochs
         start_time = time.time()
-
+        local_time = time.time()
         best_eval = -np.inf
+        o, info = self.env.reset(seed=self.seed)
+        current_seed = self.seed
+        ep_len = 0
 
-        # 1000*5
-        for t in (range(self.steps_per_epoch * self.epochs)):
-            # if t % 1000 == 0:  # Print every 1000 steps to avoid spam
-            #     print(f"[STEP {t}] Current seed: {current_seed}, Buffer size: {self.replay_buffer.size}")
-            #     print(f"[STEP {t}] Current observation: {o[:3]}...")
+        print(f"Training SAC for IRL agent: Total steps {total_steps:d}")
+        # Main loop: collect experience in env and update/log each epoch
+        test_rets = []
+        alphas = []
+        log_pis = []
+        test_time_steps = []
+
+        
+        for t in range(total_steps):
             
             # Until start_steps have elapsed, randomly sample actions
             # from a uniform distribution for better exploration. Afterwards, 
             # use the learned policy. 
             if self.replay_buffer.size > self.start_steps:
                 a = self.get_action(o)
-
             else:
                 a = self.env.action_space.sample()
 
@@ -563,8 +555,8 @@ class SAC:
             o = o2
 
             # End of trajectory handling with incremented seed
-            if d or ep_len == self.max_ep_len:
-                current_seed = train_seed_sequence.randint(0, 2**32-1)
+            if d or ep_len==self.max_ep_len:
+                current_seed += 1  # Increment seed for next episode
                 o, info = self.env.reset(seed=current_seed)
                 ep_len = 0
 
@@ -576,28 +568,14 @@ class SAC:
                     for j in range(self.update_every):
                         batch = self.replay_buffer.sample_batch(self.batch_size)
                         _, _, log_pi = self.update(data=batch)
-                        
             else:
                 # NOTE: assert training agent policy
                 if self.replay_buffer.size>=self.update_after and t % self.update_every == 0:
-                    start_time = time.time()
                     for j in range(self.update_every):
                         batch = self.replay_buffer.sample_batch(self.batch_size)
                         obs = batch['obs'][:, self.reward_state_indices]
-                        
-                        if self.use_actions_for_reward:
-                            # Compute reward using both states and actions
-                            acts = batch['act']
-                            combined_input = torch.cat([obs, acts], dim=1)
-                            batch['rew'] = torch.FloatTensor(self.reward_function(combined_input)).to(self.device)
-                        else:
-                            # Compute reward using only states
-                            batch['rew'] = torch.FloatTensor(self.reward_function(obs)).to(self.device)
-                            
-                        _, _, log_pi = self.update(data=batch) 
-
-
-
+                        batch['rew'] = torch.FloatTensor(self.reward_function(obs)).to(self.device)
+                        _, _, log_pi = self.update(data=batch)         
 
             # End of epoch handling
             if t % self.log_step_interval == 0:
@@ -622,26 +600,3 @@ class SAC:
     @property
     def networks(self):
         return [self.ac.pi, self.ac.q1, self.ac.q2]
-
-    def get_q_stats(self):
-        """Get average Q-values and their standard deviations across Q-networks for each state."""
-        if not hasattr(self, '_q_stats_batch'):
-            # Cache a batch of states for consistent monitoring
-            self._q_stats_batch = self.replay_buffer.sample_batch(100)
-        
-        batch = self._q_stats_batch
-        o, a = batch['obs'], batch['act']
-        
-        with torch.no_grad():
-            # Get Q-values from all networks for current state-action pairs
-            q1_vals = torch.stack([q1(o, a) for q1 in self.ac.q1_list])
-            q2_vals = torch.stack([q2(o, a) for q2 in self.ac.q2_list])
-            
-            # Get minimum Q-values from each pair
-            q_mins = torch.minimum(q1_vals, q2_vals)
-            
-            # Compute mean and std for each state across Q-networks
-            q_mean = q_mins.mean(dim=0).mean().item()  # Average across networks then states
-            q_std = q_mins.std(dim=0).mean().item()    # Std across networks, averaged over states
-            
-            return q_mean, q_std
