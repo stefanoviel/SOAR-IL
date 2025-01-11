@@ -33,7 +33,7 @@ def ML_loss(div: str, agent_samples, expert_samples, reward_func, device):
         agent_samples is numpy array of shape (N, T, d) 
         expert_samples is numpy array of shape (N, T, d) or (N, d)
     '''
-    assert div in ['maxentirl']
+    assert div in ['maxentirl', 'opt-AIL']
     sA, _, _ = agent_samples
     _, T, d = sA.shape
 
@@ -174,17 +174,20 @@ if __name__ == "__main__":
                       help='Uncertainty coefficient for exploration (default: 1.0)')
     parser.add_argument('--q_std_clip', type=float, default=1.0,
                       help='Maximum value to clip Q-value standard deviations (default: 1.0)')
-    
 
     args = parser.parse_args()
-
 
     # Load config
     yaml = YAML()
     v = yaml.load(open(args.config))
 
+    # Validate num_q_pairs if opt_AIL is true
+    if v['obj'] == 'opt-AIL':
+        if args.num_q_pairs != 1:
+            raise ValueError("num_q_pairs must be one when opt_AIL is true to conform to the description of opt-AIL")
+
     # assumptions
-    assert v['obj'] in ['maxentirl','maxentirl_sa']
+    assert v['obj'] in ['maxentirl','maxentirl_sa', 'opt-AIL']
     assert v['IS'] == False
     
     # Use parsed arguments
@@ -197,6 +200,7 @@ if __name__ == "__main__":
     print("seed:", seed)
     print("uncertainty_coef:", uncertainty_coef)
     print("q_std_clip:", q_std_clip)
+    print("obj:", v['obj'])
 
     # common parameters
     env_name = v['env']['env_name']
@@ -302,6 +306,7 @@ if __name__ == "__main__":
                 uncertainty_coef=uncertainty_coef,
                 q_std_clip=q_std_clip,
                 use_actions_for_reward=use_actions_for_reward,
+                opt_AIL=v['obj'] == 'opt-AIL',
                 **v['sac']
             )
         
@@ -336,7 +341,7 @@ if __name__ == "__main__":
             else:
                 expert_trajs_train = None # not use expert trajs
 
-            if v['obj'] == 'maxentirl':
+            if v['obj'] == 'maxentirl' or v['obj'] == 'opt-AIL':
                 loss = ML_loss(v['obj'], samples, expert_samples, reward_func, device)
             elif v['obj'] == 'maxentirl_sa':
                 loss = ML_sa_loss(v['obj'], samples, expert_samples_sa, reward_func, device) 
@@ -371,4 +376,4 @@ if __name__ == "__main__":
     writer.close()
 
 
-# python -m irl_methods.irl_samples_ml_irl --config configs/samples/agents/ant.yml --num_q_pairs 1 --seed 0 --uncertainty_coef 1.0 --q_std_clip 1.0 
+# python -m irl_methods.irl_samples_ml_irl --config configs/samples/agents/hopper.yml --num_q_pairs 5 --seed 0 --uncertainty_coef 1.0 --q_std_clip 1.0 

@@ -94,7 +94,8 @@ class SAC:
             update_after=1000, update_every=50, num_test_episodes=10, max_ep_len=1000, 
             log_step_interval=None, reward_state_indices=None,
             save_freq=1, device=torch.device("cpu"), automatic_alpha_tuning=True, reinitialize=True,
-            num_q_pairs=3, uncertainty_coef=1.0, q_std_clip=1.0,  # Add q_std_clip parameter
+            num_q_pairs=1, uncertainty_coef=1.0, q_std_clip=1.0,  # Add q_std_clip parameter
+            opt_ail = False, lambda_opt_ail=1e-3,
             use_actions_for_reward=False, **kwargs):
 
         """
@@ -205,6 +206,8 @@ class SAC:
         self.batch_size=batch_size
         self.gamma=gamma    
         self.use_actions_for_reward = use_actions_for_reward
+        self.opt_ail = opt_ail
+        self.lambda_opt_ail = lambda_opt_ail
         
         self.polyak=polyak
         # Action limit for clamping: critically, assumes all dimensions share the same bound!
@@ -272,6 +275,8 @@ class SAC:
         self.uncertainty_coef = uncertainty_coef  # Store the coefficient
         self.q_std_clip = q_std_clip  # Store the clipping value
 
+        if self.opt_ail:
+            assert self.num_q_pairs == 1, "OPT-AIL was designed for single Q-networks only"
 
         # Add comprehensive seeding at initialization
         self.seed = seed
@@ -322,9 +327,14 @@ class SAC:
             q_pi_targ = torch.min(q1_pi_targ, q2_pi_targ)
             backup = r + self.gamma * (1 - d) * (q_pi_targ - self.alpha * logp_a2)
 
-        # MSE loss against Bellman backup
-        loss_q1 = ((q1 - backup)**2).mean()
-        loss_q2 = ((q2 - backup)**2).mean()
+        if self.opt_ail:
+            # MSE loss against Bellman backup
+            loss_q1 = ((q1 - backup)**2).mean() 
+            loss_q2 = ((q2 - backup)**2).mean()
+        else:
+            loss_q1 = ((q1 - backup)**2).mean() - self.lambda_opt_ail * q1.mean()
+            loss_q2 = ((q2 - backup)**2).mean() - self.lambda_opt_ail * q2.mean()
+
         return loss_q1 + loss_q2
 
     # Set up function for computing SAC pi loss
