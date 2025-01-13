@@ -6,6 +6,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+# 1) Increase font sizes for ticks, axis labels, etc.
+mpl.rcParams['xtick.labelsize'] = 14
+mpl.rcParams['ytick.labelsize'] = 14
+mpl.rcParams['axes.labelsize'] = 16    # Size of "Episode" or "Return" labels
+mpl.rcParams['axes.titlesize'] = 16    # Size of each subplot title
+mpl.rcParams['legend.fontsize'] = 14
+
 # ========== USER DEFINED VARIABLES ==========
 
 ENVIRONMENTS = [
@@ -17,7 +27,8 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-METHODS = ["maxentirl", "rkl"]
+METHODS = ["cisl", "maxentirl_sa"]
+# METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
 BASELINES = ["gail", "sqil", "opt-AIL"]
@@ -287,15 +298,14 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
         )
     
     # (c) Expert line at y=1.0
-    ax.axhline(y=1.0, color='black', linestyle=':', label='_nolegend_')
-    # Add a small text label at the top for "Expert = 1"
-    # We'll place it near the upper-left, you can tweak coords as needed
-    ax.text(
-        0.02, 1.01,  # x=2% from left, y=1% above the line
-        "Expert = 1",
-        transform=ax.get_yaxis_transform(),
-        ha='left', va='bottom', color='black'
-    )
+    ax.axhline(y=1.0, color='black', linestyle=':', label='Expert')
+    # ax.text(
+    #     0.02, 1.01,  # x=2% from the left, y=1% above the line
+    #     "Expert = 1",
+    #     transform=ax.get_yaxis_transform(),
+    #     ha='left', va='bottom',
+    #     color='black'
+    # )
     
     # (d) Decorate
     ax.set_title(env_name, y=1.02)  # move title a bit higher
@@ -313,9 +323,11 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
 def main():
     n_envs = len(ENVIRONMENTS)
     fig, axes = plt.subplots(
-        1, n_envs, figsize=(5 * n_envs, 4),
+        1, n_envs,
+        figsize=(5 * n_envs, 6),  # <- increase height from 4 to 6
         sharey=True
     )
+
     
     if n_envs == 1:
         axes = [axes]
@@ -350,14 +362,19 @@ def main():
     # Adjust spacing
     # top=0.88 => leave some space for the suptitle
     # bottom=0.08 => to accommodate the legend
-    fig.subplots_adjust(top=0.88, bottom=0.08, left=0.06, right=0.98)
-    
-    # Move the suptitle a bit higher
-    fig.suptitle(
-        "Comparison Across All Environments (Standardized Returns)",
-        y=0.96
+    fig.subplots_adjust(
+        top=0.83,    # move the top boundary down a bit
+        bottom=0.25, # move the bottom boundary up a bit
+        left=0.06,
+        right=0.98
     )
-    
+
+    fig.suptitle(
+        " State‐Action Methods",
+        y=0.96,
+        fontsize=23  # <-- set a larger font size
+    )
+
     out_dir = Path("plots")
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / "all_envs_single_row_standardized.png"
