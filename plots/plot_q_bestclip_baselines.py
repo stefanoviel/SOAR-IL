@@ -8,7 +8,6 @@ from pathlib import Path
 
 # ========== USER DEFINED VARIABLES ==========
 
-# List of environments to process
 ENVIRONMENTS = [
     "Ant-v5",
     "Hopper-v5",
@@ -17,22 +16,21 @@ ENVIRONMENTS = [
     "HalfCheetah-v5",
 ]
 
-# Methods (need to plot q=1 and best clipping)
-# METHODS = ["maxentirl", "rkl"]
-METHODS = ["cisl", "maxentirl_sa"]
+# Methods (two lines each: q=1 [dashed], best q [solid])
+METHODS = ["maxentirl", "rkl"]
 
-# Baselines (only one line per baseline)
+# Baselines (one line each: dash-dot)
 BASELINES = ["gail", "sqil", "opt-AIL"]
 
-# Manually specify colors for each method
+# Unique colors for each method
 METHOD_COLORS = {
-    "maxentirl": "blue",        # or '#1f77b4'
-    "rkl": "red",               # or '#d62728'
-    "cisl": "green",            # or '#2ca02c'
-    "maxentirl_sa": "purple",   # or '#9467bd'
+    "maxentirl": "blue",
+    "rkl": "red",
+    "cisl": "green",          
+    "maxentirl_sa": "purple",
 }
 
-# Manually specify colors for each baseline
+# Unique colors for baselines
 BASELINE_COLORS = {
     "gail": "orange",
     "sqil": "brown",
@@ -50,7 +48,6 @@ MAX_EPISODES_DICT = {
     "Ant-v5": 1.2e6,
     "Humanoid-v5": 1e6,
     "HalfCheetah-v5": 1.5e6,
-    # Add more environments as needed
 }
 
 # (Optional) mapping from environment to the exact expert .txt file
@@ -62,15 +59,17 @@ EXPERT_FILE_DICT = {
     "HalfCheetah-v5": "expert_data/meta/HalfCheetah-v5_1.txt",
 }
 
+
 # ========== HELPER FUNCTIONS ==========
 
 def load_processed_data_for_method(env_name: str, method_name: str, data_dir: str) -> pd.DataFrame:
     """
-    Finds a CSV in data_dir matching something like:
+    Finds a CSV in data_dir matching:
       {env_name}_exp-*_{method_name}_data.csv
     Returns the loaded DataFrame, or None if not found.
-    If multiple CSVs match, it picks the first one.
+    If multiple CSVs match, picks the first one.
     """
+    import fnmatch
     pattern = os.path.join(data_dir, f"{env_name}_exp-*_{method_name}_data.csv")
     matched_files = glob.glob(pattern)
     if not matched_files:
@@ -85,8 +84,7 @@ def load_processed_data_for_method(env_name: str, method_name: str, data_dir: st
 def compute_mean_return_across_seeds(df: pd.DataFrame) -> pd.DataFrame:
     """
     Group by (q, clip, episode), compute mean and std across seeds.
-    Returns a DataFrame with columns: q, clip, episode, mean_return, std_return, n_seeds.
-    This version ensures we keep rows where clip is NaN (e.g., for baselines).
+    Returns columns: q, clip, episode, mean_return, std_return, n_seeds.
     """
     grouped = df.groupby(['q', 'clip', 'episode'], dropna=False)
     df_agg = grouped['Real Det Return'].agg(['mean', 'std', 'count']).reset_index()
@@ -95,29 +93,25 @@ def compute_mean_return_across_seeds(df: pd.DataFrame) -> pd.DataFrame:
             'mean': 'mean_return',
             'std': 'std_return',
             'count': 'n_seeds'
-        }, 
+        },
         inplace=True
     )
     return df_agg
 
 def compute_auc(df_mean_std: pd.DataFrame, use_trapz: bool = False) -> pd.DataFrame:
     """
-    Compute area under curve (AUC) for each (q, clip).
-    Optionally use trapezoidal rule (more accurate) or simple sum.
+    Compute area under the curve for each (q, clip).
+    Optionally use trapezoidal rule.
     """
-    # Sort to ensure episode is ascending
     df_sorted = df_mean_std.sort_values(by=['q','clip','episode'])
-    
     auc_records = []
     for (q_val, clip_val), group_df in df_sorted.groupby(['q','clip']):
         x = group_df['episode'].values
         y = group_df['mean_return'].values
         
         if use_trapz:
-            # trapezoidal rule
             auc_val = np.trapz(y, x)
         else:
-            # discrete sum
             auc_val = y.sum()
         
         auc_records.append({
@@ -130,9 +124,8 @@ def compute_auc(df_mean_std: pd.DataFrame, use_trapz: bool = False) -> pd.DataFr
 
 def find_best_clipping(auc_df: pd.DataFrame, skip_q=1.0) -> tuple:
     """
-    Find the (q,clip) with the highest AUC, ignoring skip_q if desired.
-    Returns (best_q, best_clip).
-    If there's no candidate other than skip_q, returns (None, None).
+    Find (q, clip) with highest AUC, ignoring skip_q if desired.
+    Returns (best_q, best_clip) or (None, None) if no candidate found.
     """
     filtered = auc_df[auc_df['q'] != skip_q]
     if filtered.empty:
@@ -143,9 +136,9 @@ def find_best_clipping(auc_df: pd.DataFrame, skip_q=1.0) -> tuple:
 
 def parse_expert_det_return(expert_txt_path: str) -> float:
     """
-    Parse the file looking for a line like:
+    Parse the file for a line like:
       Expert(Det) Return Avg: 4061.41, std: 730.58
-    Returns the float (e.g. 4061.41).
+    Returns the float (e.g., 4061.41).
     If not found, returns None.
     """
     if not os.path.isfile(expert_txt_path):
@@ -159,44 +152,59 @@ def parse_expert_det_return(expert_txt_path: str) -> float:
                 return float(match.group(1))
     return None
 
-def process_environment(env_name: str):
+
+def plot_environment(env_name: str, ax: plt.Axes, idx: int):
     """
-    Creates a single plot for each environment, including:
-      - For each method in METHODS: Q=1 (dashed) + best clipping (solid).
-      - For each baseline in BASELINES: single line (solid or dash-dotted, as you prefer).
-      - Horizontal line for the expert return (if available).
-    Then saves the figure in `plots/{env_name}` directory.
+    Plots data for a single environment onto a given Axes.
+    
+    - We standardize the returns by the expert's return, so expert = 1.0.
+    - We leave some space below 0 and above 1 (e.g., -0.05 to 1.05).
+    - We show a dashed line at y=1 labeled "Expert = 1".
+    - For q=1 line => label is the method name (if best_q != 4); otherwise no legend label.
+    - For best_q=4 => label = "method + SOAR". For any other best_q => no legend label.
+    - Baselines => single line each, labeled only once across subplots (this is handled by the final legend merging).
+    - Only the first subplot has a y-label. Others have none.
     """
     print(f"=== Processing environment: {env_name} ===")
-    
-    # Max episodes for environment
+
+    # Expert Return
+    expert_txt_path = EXPERT_FILE_DICT.get(env_name)
+    if not expert_txt_path:
+        print(f"  No expert file for {env_name}, skipping plot.")
+        return
+    expert_return = parse_expert_det_return(expert_txt_path)
+    if expert_return is None or expert_return <= 0:
+        print(f"  Invalid expert return for {env_name}, skipping plot.")
+        return
+
+    # For x-limits
     max_ep = MAX_EPISODES_DICT.get(env_name, None)
     
-    # Dictionary to store data & best clip results for methods
+    # Gather data
     method_results = {}
     method_best = {}
     
-    # 1) For each method, load CSV, compute means, then AUC, then best clip
+    # 1) Methods
     for method in METHODS:
         df_raw = load_processed_data_for_method(env_name, method, PROCESSED_DATA_DIR)
         if df_raw is None:
-            continue  # skip if no file found
+            continue
         
         df_mean_std = compute_mean_return_across_seeds(df_raw)
-        
-        # If there's a max_ep limit, filter out episodes
         if max_ep is not None:
             df_mean_std = df_mean_std[df_mean_std['episode'] <= max_ep]
         
+        # standardize
+        df_mean_std['std_return'] = df_mean_std['mean_return'] / expert_return
+        
+        # find best
         auc_df = compute_auc(df_mean_std, use_trapz=True)
         best_q, best_clip = find_best_clipping(auc_df, skip_q=1.0)
         
         method_results[method] = df_mean_std
         method_best[method] = (best_q, best_clip)
-        
-        print(f"    Method={method}, best clip => q={best_q}, clip={best_clip}")
     
-    # 2) For each baseline, load CSV, compute means
+    # 2) Baselines
     baseline_results = {}
     for baseline in BASELINES:
         df_raw = load_processed_data_for_method(env_name, baseline, PROCESSED_DATA_DIR)
@@ -207,128 +215,155 @@ def process_environment(env_name: str):
         if max_ep is not None:
             df_mean_std = df_mean_std[df_mean_std['episode'] <= max_ep]
         
+        # standardize
+        df_mean_std['std_return'] = df_mean_std['mean_return'] / expert_return
         baseline_results[baseline] = df_mean_std
     
-    # 3) Parse expert deterministic return (horizontal line)
-    expert_return = None
-    expert_txt_path = EXPERT_FILE_DICT.get(env_name, None)
-    if expert_txt_path:
-        expert_return = parse_expert_det_return(expert_txt_path)
-        if expert_return is not None:
-            print(f"Expert(Det) Return for {env_name}: {expert_return:.2f}")
-    
-    # 4) Create the plot
-    plt.figure(figsize=(10, 6))
-    
-    # Plot each method with two lines: q=1 (dashed), best clip (solid)
+    # ========== Plot ==========
+
+    # (a) Methods
     for method, df_mean_std in method_results.items():
-        color = METHOD_COLORS.get(method, None)
-        if color is None:
-            color = next(plt.gca()._get_lines.prop_cycler)['color']
+        color = METHOD_COLORS.get(method, "black")
         
-        # (a) Q=1 line
+        # q=1 line
         q1_data = df_mean_std[df_mean_std['q'] == 1.0].sort_values('episode')
         if not q1_data.empty:
-            # smoothing
-            q1_data['smoothed_mean_return'] = (
-                q1_data['mean_return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
-            )
-            plt.plot(
+            q1_data['smoothed'] = q1_data['std_return'].rolling(SMOOTHING_WINDOW, min_periods=1).mean()
+            
+            best_q, best_clip = method_best[method]
+            # Label logic
+            if best_q == 4:
+                line_label = "_nolegend_"
+            else:
+                line_label = method  # e.g., "maxentirl"
+            
+            ax.plot(
                 q1_data['episode'],
-                q1_data['smoothed_mean_return'],
-                label=f"{method} (q=1)",
+                q1_data['smoothed'],
+                linestyle='--',
                 color=color,
-                linestyle='--'
+                label=line_label
             )
-            if SHOW_CONFIDENCE:
-                upper = q1_data['mean_return'] + q1_data['std_return']
-                lower = q1_data['mean_return'] - q1_data['std_return']
-                plt.fill_between(q1_data['episode'], lower, upper, alpha=0.2, color=color)
         
-        # (b) Best (q, clip) line
+        # best line
         best_q, best_clip = method_best[method]
         if best_q is not None:
             best_data = df_mean_std[
                 (df_mean_std['q'] == best_q) & (df_mean_std['clip'] == best_clip)
             ].sort_values('episode')
-            
             if not best_data.empty:
-                best_data['smoothed_mean_return'] = (
-                    best_data['mean_return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
-                )
-                plt.plot(
+                best_data['smoothed'] = best_data['std_return'].rolling(
+                    SMOOTHING_WINDOW, min_periods=1
+                ).mean()
+                
+                # If best_q=4 => "method + SOAR", else => "_nolegend_"
+                if best_q == 4:
+                    best_label = f"{method} + SOAR"
+                else:
+                    best_label = "_nolegend_"
+                
+                ax.plot(
                     best_data['episode'],
-                    best_data['smoothed_mean_return'],
-                    label=f"{method} (q={best_q}, clip={best_clip})",
+                    best_data['smoothed'],
+                    linestyle='-',
                     color=color,
-                    linestyle='-'
+                    label=best_label
                 )
-                if SHOW_CONFIDENCE:
-                    upper = best_data['mean_return'] + best_data['std_return']
-                    lower = best_data['mean_return'] - best_data['std_return']
-                    plt.fill_between(best_data['episode'], lower, upper, alpha=0.2, color=color)
     
-    # Plot each baseline as a single line
+    # (b) Baselines
     for baseline, df_mean_std in baseline_results.items():
-        color = BASELINE_COLORS.get(baseline, None)
-        if color is None:
-            color = next(plt.gca()._get_lines.prop_cycler)['color']
-        
+        color = BASELINE_COLORS.get(baseline, "black")
         df_mean_std = df_mean_std.sort_values('episode')
-        df_mean_std['smoothed_mean_return'] = (
-            df_mean_std['mean_return'].rolling(window=SMOOTHING_WINDOW, min_periods=1).mean()
-        )
+        df_mean_std['smoothed'] = df_mean_std['std_return'].rolling(
+            SMOOTHING_WINDOW, min_periods=1
+        ).mean()
         
-        plt.plot(
+        ax.plot(
             df_mean_std['episode'],
-            df_mean_std['smoothed_mean_return'],
-            label=f"{baseline}",
+            df_mean_std['smoothed'],
+            linestyle='-.',
             color=color,
-            linestyle='-.'
-        )
-        if SHOW_CONFIDENCE:
-            upper = df_mean_std['mean_return'] + df_mean_std['std_return']
-            lower = df_mean_std['mean_return'] - df_mean_std['std_return']
-            plt.fill_between(
-                df_mean_std['episode'],
-                lower,
-                upper,
-                alpha=0.2,
-                color=color
-            )
-    
-    # (d) Plot expert horizontal line (if found)
-    if expert_return is not None:
-        plt.axhline(
-            y=expert_return, 
-            color='black', 
-            linestyle=':',
-            label=f"Expert(Det) {expert_return:.2f}"
+            label=baseline
         )
     
-    # 5) Decorate and save
-    plt.title(f"{env_name} Comparison: Methods (q=1 & best clip) + Baselines + Expert")
-    plt.xlabel("Episode")
-    plt.ylabel("Real Det Return")
-    plt.legend()
-    plt.grid(True)
+    # (c) Expert line at y=1.0
+    ax.axhline(y=1.0, color='black', linestyle=':', label='_nolegend_')
+    # Add a small text label at the top for "Expert = 1"
+    # We'll place it near the upper-left, you can tweak coords as needed
+    ax.text(
+        0.02, 1.01,  # x=2% from left, y=1% above the line
+        "Expert = 1",
+        transform=ax.get_yaxis_transform(),
+        ha='left', va='bottom', color='black'
+    )
+    
+    # (d) Decorate
+    ax.set_title(env_name, y=1.02)  # move title a bit higher
+    if idx == 0:
+        ax.set_ylabel("Return")
+    else:
+        ax.set_ylabel("")  # no label for others
+    ax.set_xlabel("Episode")
+    
+    # Give some margin above/below 0..1
+    ax.set_ylim(-0.05, 1.05)
+    ax.grid(True)
 
-    # Save figure
-    all_methods = METHODS + BASELINES
-    method_str = "_".join(all_methods) if all_methods else "noMethod"
-    out_dir = Path("plots") / env_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_name = f"{env_name}_{method_str}_comparison.png"
-    out_path = out_dir / out_name
-    plt.savefig(out_path, dpi=300)
-    plt.close()
-    print(f"Plot saved at {out_path}")
-
-# ========== MAIN LOGIC ==========
 
 def main():
-    for env_name in ENVIRONMENTS:
-        process_environment(env_name)
+    n_envs = len(ENVIRONMENTS)
+    fig, axes = plt.subplots(
+        1, n_envs, figsize=(5 * n_envs, 4),
+        sharey=True
+    )
+    
+    if n_envs == 1:
+        axes = [axes]
+    
+    for i, env_name in enumerate(ENVIRONMENTS):
+        plot_environment(env_name, ax=axes[i], idx=i)
+    
+    # Gather legend info
+    handles_labels = [ax.get_legend_handles_labels() for ax in axes]
+    handles = []
+    labels = []
+    for hlist, llist in handles_labels:
+        handles.extend(hlist)
+        labels.extend(llist)
+    
+    # Deduplicate
+    by_label = {}
+    for h, l in zip(handles, labels):
+        if l not in by_label:
+            by_label[l] = h
+    
+    # Place legend near the bottom, a bit lower than default
+    # Adjust 'bbox_to_anchor' as needed
+    fig.legend(
+        by_label.values(),
+        by_label.keys(),
+        loc='lower center',
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=4
+    )
+    
+    # Adjust spacing
+    # top=0.88 => leave some space for the suptitle
+    # bottom=0.08 => to accommodate the legend
+    fig.subplots_adjust(top=0.88, bottom=0.08, left=0.06, right=0.98)
+    
+    # Move the suptitle a bit higher
+    fig.suptitle(
+        "Comparison Across All Environments (Standardized Returns)",
+        y=0.96
+    )
+    
+    out_dir = Path("plots")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "all_envs_single_row_standardized.png"
+    fig.savefig(out_path, dpi=300)
+    print(f"Saved combined figure to {out_path}")
+
 
 if __name__ == "__main__":
     main()
