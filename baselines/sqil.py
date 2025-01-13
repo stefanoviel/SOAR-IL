@@ -165,6 +165,7 @@ if __name__ == "__main__":
         exp_id
         + '/'
         + now.strftime('%Y_%m_%d_%H_%M_%S')
+        + '_seed' + str(seed)
     )
     logger.configure(dir=log_folder)
     writer = SummaryWriter(log_folder)

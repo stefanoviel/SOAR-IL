@@ -3,7 +3,6 @@
 # Define all environments to iterate over
 environments=("ant" "halfcheetah" "hopper" "humanoid" "walker2d")
 
-
 # Optionally create an output directory if it doesn't exist
 mkdir -p outputs
 
@@ -16,12 +15,17 @@ for env in "${environments[@]}"; do
 
   echo "Running ${algorithm} for env=${env} ..."
 
-  # Run the command in the background (&), redirect output to .log
-  python -u -m irl_methods.irl_samples_ml_irl \
-      --config "${config_path}" \
-      --seed 0 \
-      > "outputs/${env}/opt_ail.log" 2>&1 &
+  # Run for 4 different seeds
+  for seed in 0 1 2 3 4; do
+    echo "  - Using seed=${seed} ..."
+    python -u -m irl_methods.irl_samples_ml_irl \
+        --config "${config_path}" \
+        --seed "${seed}" \
+        > "outputs/${env}/opt_ail_seed${seed}.log" 2>&1 &
 
+    # Sleep for a bit to avoid overloading the system
+    sleep 0.5
+  done
 done
 
 # Wait for all background tasks to complete

@@ -48,7 +48,7 @@ def main():
 
     # Logging directory
     now = datetime.datetime.now(dateutil.tz.tzlocal())
-    log_dir = f"logs/{args.env_name}/exp-{args.num_expert_trajs}/gail/" + now.strftime('%Y_%m_%d_%H_%M_%S')
+    log_dir = f"logs/{args.env_name}/exp-{args.num_expert_trajs}/gail/" + now.strftime('%Y_%m_%d_%H_%M_%S') + "_seed" + str(args.seed)
     os.makedirs(log_dir, exist_ok=True)
     
     writer = SummaryWriter(log_dir=log_dir)
