@@ -23,7 +23,7 @@ ENVIRONMENTS = [
     "Hopper-v5",
     "Walker2d-v5",
     "Humanoid-v5",
-    "HalfCheetah-v5",
+    # "HalfCheetah-v5",
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
@@ -31,7 +31,8 @@ METHODS = ["cisl", "maxentirl_sa"]
 # METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
-BASELINES = ["gail", "sqil", "opt-AIL"]
+BASELINES = ["gail", "sqil"]
+# BASELINES = ["opt-AIL"]
 
 # Unique colors for each method
 METHOD_COLORS = {
@@ -243,10 +244,8 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
             
             best_q, best_clip = method_best[method]
             # Label logic
-            if best_q == 4:
-                line_label = "_nolegend_"
-            else:
-                line_label = method  # e.g., "maxentirl"
+
+            line_label = method  # e.g., "maxentirl"
             
             ax.plot(
                 q1_data['episode'],
@@ -269,7 +268,7 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
                 
                 # If best_q=4 => "method + SOAR", else => "_nolegend_"
                 if best_q == 4:
-                    best_label = f"{method} + SOAR"
+                    best_label = f"{method} + SOAR (Ours)"
                 else:
                     best_label = "_nolegend_"
                 
