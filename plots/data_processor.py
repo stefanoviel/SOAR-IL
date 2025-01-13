@@ -65,7 +65,6 @@ class ExperimentDataProcessor:
         data_rows = []
         # Glob example: "logs/Ant-v5/exp-16/rkl/2024_*_seed*"
         folders = glob.glob(os.path.join(self.base_path, '*_seed*'))
-        print
 
         # Extract environment name from base_path (for consistent naming inside the DF)
         env_name = self.base_path.split('/')[1]
@@ -77,19 +76,30 @@ class ExperimentDataProcessor:
 
             # print(f"Processing folder: {folder}, q={q}, clip={clip}, seed={seed}")
 
-            if q is not None:
-                # try:
-                df = pd.read_csv(f'{folder}/progress.csv')
-                # Add experiment metadata
-                df['q'] = q
-                df['clip'] = clip
-                df['folder'] = folder
-                df['episode'] = df['Itration'] * 5000  # Convert iterations to episodes
-                df['environment'] = env_name
-                df['seed'] = seed
-                data_rows.append(df)
-                # except Exception as e:
-                #     print(f"Error reading file in folder: {folder}: {e}")
+
+            # try:
+            df = pd.read_csv(f'{folder}/progress.csv')
+            # Add experiment metadata
+            df['q'] = q
+            df['clip'] = clip
+            df['folder'] = folder
+
+            if 'Env Steps' in df.columns:
+                df['episode'] = df['Env Steps']
+            elif 'Running Env Steps' in df.columns:
+                df['episode'] = df['Running Env Steps']
+            elif 'episode' in df.columns:
+                pass
+            elif 'Itration' in df.columns:
+                df['episode'] = df['Itration'] * 5000
+            elif 'Iteration' in df.columns:
+                df['episode'] = df['Iteration'] * 5000
+
+            df['environment'] = env_name
+            df['seed'] = seed
+            data_rows.append(df)
+            # except Exception as e:
+            #     print(f"Error reading file in folder: {folder}: {e}")
 
         if not data_rows:
             raise ValueError(f"No data found in {self.base_path}")
@@ -125,6 +135,7 @@ class ExperimentDataProcessor:
         for exp_folder in exp_folders:
             try:
                 processor = cls(exp_folder)
+                print(f"Processing {exp_folder}")
                 # Load (and thus process) data. Force reprocessing with use_cache=False
                 processor.load_data(use_cache=False)
                 # Since we only store in processed_data, there's no second saving step.
