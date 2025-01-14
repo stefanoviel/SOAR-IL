@@ -224,8 +224,10 @@ if __name__ == "__main__":
     system.reproduce(seed)
     pid=os.getpid()
 
-    # logs
-    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
+
+    # TODO: change back 
+    # exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
+    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/testing" # task/obj/date structure
     # exp_id = 'debug'
     if not os.path.exists(exp_id):
         os.makedirs(exp_id)

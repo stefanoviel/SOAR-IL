@@ -36,7 +36,6 @@ class SquashedGaussianMLPActor(nn.Module):
         self.np_rng.seed(seed)
         torch.manual_seed(seed)
 
-
     def forward(self, obs, deterministic=False, with_logprob=True):
         net_out = self.net(obs)
         mu = self.mu_layer(net_out)
@@ -52,7 +51,8 @@ class SquashedGaussianMLPActor(nn.Module):
         else:
             # reparameterization trick
             # 1. Sample base noise from standard normal
-            epsilon = torch.randn(mu.shape, generator=self.rng, device=mu.device)  # ε ~ N(0,1)
+
+            epsilon = torch.randn(mu.shape, device=mu.device)  # ε ~ N(0,1)
 
             # 2. Transform the noise using μ and σ
             pi_action = mu + std * epsilon  # x = μ + σ * ε

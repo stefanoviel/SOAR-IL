@@ -25,65 +25,111 @@ def count_vars(module):
 
 class ReplayBuffer:
     """
-    A simple FIFO experience replay buffer for SAC agents.
+    A simple FIFO experience replay buffer for SAC agents, 
+    storing data in pinned memory for faster CPU->GPU transfers.
     """
-
     def __init__(self, obs_dim, act_dim, device=torch.device('cpu'), size=int(1e6)):
-        self.state = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
-        self.next_state = np.zeros(combined_shape(size, obs_dim), dtype=np.float32)
-        self.action = np.zeros(combined_shape(size, act_dim), dtype=np.float32)
-        self.reward = np.zeros(size, dtype=np.float32)
-        self.done = np.zeros(size, dtype=np.float32)
-        self.ptr, self.size, self.max_size = 0, 0, size
         self.device = device
-        # print(device)
+        self.max_size = size
+        self.ptr = 0
+        self.size = 0
+
+        # --- CHANGED: Use pinned Tensors instead of np arrays ---
+        self.state = torch.empty(
+            combined_shape(size, obs_dim), 
+            dtype=torch.float32, 
+            pin_memory=True
+        )
+        self.next_state = torch.empty(
+            combined_shape(size, obs_dim), 
+            dtype=torch.float32, 
+            pin_memory=True
+        )
+        self.action = torch.empty(
+            combined_shape(size, act_dim), 
+            dtype=torch.float32, 
+            pin_memory=True
+        )
+        self.reward = torch.empty(
+            size, 
+            dtype=torch.float32, 
+            pin_memory=True
+        )
+        self.done = torch.empty(
+            size, 
+            dtype=torch.float32, 
+            pin_memory=True
+        )
+
         self.rng = np.random.RandomState()
 
     def set_seed(self, seed):
-        """Improved seeding for replay buffer"""
+        """Set seeds for reproducibility."""
         self.rng = np.random.RandomState(seed)
-        # If using PyTorch for sampling, also set its seed
         torch.manual_seed(seed)
 
     def store_batch(self, obs, act, rew, next_obs, done):
+        """
+        Store a batch of transitions. 
+        obs, next_obs, act, rew, done can be NumPy arrays.
+        """
         num = len(obs)
-        full =  self.ptr + num > self.max_size
-        if not full:
-            self.state[self.ptr: self.ptr + num] = obs
-            self.next_state[self.ptr: self.ptr + num] = next_obs
-            self.action[self.ptr: self.ptr + num] = act
-            self.reward[self.ptr: self.ptr + num] = rew
-            self.done[self.ptr: self.ptr + num] = done
-            self.ptr = self.ptr + num
-        else:
-            idx = np.arange(self.ptr,self.ptr+num)%self.max_size
-            self.state[idx] = obs
-            self.next_state[idx]=next_obs
-            self.action[idx]=act
-            self.reward[idx]=rew
-            self.done[idx]=done
-            self.ptr= (self.ptr+num)%self.max_size            
+        # Figure out if we wrap around the buffer
+        end = self.ptr + num
+        wrap = end > self.max_size
+        idx = np.arange(self.ptr, self.ptr + num) % self.max_size
 
+        # --- CHANGED: Copy NumPy -> pinned Tensors ---
+        # Convert input (NumPy) to Torch on CPU, then copy:
+        self.state[idx].copy_(torch.from_numpy(obs).float())
+        self.next_state[idx].copy_(torch.from_numpy(next_obs).float())
+        self.action[idx].copy_(torch.from_numpy(act).float())
+        self.reward[idx].copy_(torch.from_numpy(rew).float())
+        self.done[idx].copy_(torch.from_numpy(done).float())
+
+        # Move pointer
+        self.ptr = (self.ptr + num) % self.max_size
         self.size = min(self.size + num, self.max_size)
 
     def store(self, obs, act, rew, next_obs, done):
-        self.state[self.ptr] = obs
-        self.next_state[self.ptr] = next_obs
-        self.action[self.ptr] = act
-        self.reward[self.ptr] = rew
-        self.done[self.ptr] = done
-        self.ptr = (self.ptr+1) % self.max_size
+        """
+        Store a single transition. 
+        obs, next_obs, act, rew, done can be NumPy arrays or scalars.
+        """
+        idx = self.ptr
+
+        self.state[idx].copy_(torch.from_numpy(np.array(obs)).float())
+        self.next_state[idx].copy_(torch.from_numpy(np.array(next_obs)).float())
+        self.action[idx].copy_(torch.from_numpy(np.array(act)).float())
+        self.reward[idx].fill_(rew)
+        self.done[idx].fill_(done)
+
+        self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size+1, self.max_size)
 
     def sample_batch(self, batch_size=32):
-        """Update sampling to use seeded RNG"""
+        """
+        Return a batch of data from pinned memory. 
+        Using 'non_blocking=True' can speed up the GPU transfer.
+        """
         idxs = self.rng.randint(0, self.size, size=batch_size)
-        batch = dict(obs=self.state[idxs],
-                     obs2=self.next_state[idxs],
-                     act=self.action[idxs],
-                     rew=self.reward[idxs],
-                     done=self.done[idxs])
-        return {k: torch.as_tensor(v, dtype=torch.float32).to(self.device) for k,v in batch.items()}
+
+        # Just slice the pinned tensors
+        batch = dict(
+            obs = self.state[idxs],
+            obs2 = self.next_state[idxs],
+            act = self.action[idxs],
+            rew = self.reward[idxs],
+            done = self.done[idxs],
+        )
+
+        # Transfer to the GPU (or CPU) with non_blocking=True:
+        # (non_blocking=True only helps if the tensor is in pinned memory)
+        return {
+            k: v.to(self.device, non_blocking=True) 
+            for k, v in batch.items()
+        }
+
 
 
 class SAC:
@@ -590,7 +636,6 @@ class SAC:
             else:
                 # NOTE: assert training agent policy
                 if self.replay_buffer.size>=self.update_after and t % self.update_every == 0:
-                    start_time = time.time()
                     for j in range(self.update_every):
                         batch = self.replay_buffer.sample_batch(self.batch_size)
                         obs = batch['obs'][:, self.reward_state_indices]

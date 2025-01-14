@@ -1,25 +1,2 @@
-implement baseline
-    https://github.com/Div99/IQ-Learn
-    https://github.com/Zzl35/OPT-AIL
-    for GAIL https://stable-baselines3.readthedocs.io/en/master/guide/imitation.html
-
-
-todo: 
-* AIRL
-* SQIL 
-* BC
-* https://github.com/Zzl35/OPT-AIL
-* IQ-learn
-prioritizzare no halfchetaah
-
-
-better grid-search halfchetaach
-finish baselines
-
-
-
-maxentirl + SOAR 
-un colore per ogni algoritmo 
-expert det () no valore 
-aumentare font
-togliere tick per renderlo leggibile
+opt-ail state action
+halfchetaah retrain with new trajectories. 
