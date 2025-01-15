@@ -27,12 +27,12 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-METHODS = ["cisl", "maxentirl_sa"]
-# METHODS = ["maxentirl", "rkl"]
+# METHODS = ["cisl", "maxentirl_sa"]
+METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
-BASELINES = ["gail", "sqil"]
-# BASELINES = ["opt-AIL"]
+# BASELINES = ["gail", "sqil"]
+BASELINES = ["opt-AIL"]
 
 # Unique colors for each method
 METHOD_COLORS = {
@@ -40,6 +40,14 @@ METHOD_COLORS = {
     "rkl": "red",
     "cisl": "green",          
     "maxentirl_sa": "purple",
+}
+
+# Dictionary to map internal method names to display names
+METHOD_DISPLAY_NAMES = {
+    "maxentirl": "ML-IRL",
+    "maxentirl_sa": "ML-IRL (SA)",
+    "cisl": "cisl",
+    "rkl": "rkl"
 }
 
 # Unique colors for baselines
@@ -168,14 +176,6 @@ def parse_expert_det_return(expert_txt_path: str) -> float:
 def plot_environment(env_name: str, ax: plt.Axes, idx: int):
     """
     Plots data for a single environment onto a given Axes.
-    
-    - We standardize the returns by the expert's return, so expert = 1.0.
-    - We leave some space below 0 and above 1 (e.g., -0.05 to 1.05).
-    - We show a dashed line at y=1 labeled "Expert = 1".
-    - For q=1 line => label is the method name (if best_q != 4); otherwise no legend label.
-    - For best_q=4 => label = "method + SOAR". For any other best_q => no legend label.
-    - Baselines => single line each, labeled only once across subplots (this is handled by the final legend merging).
-    - Only the first subplot has a y-label. Others have none.
     """
     print(f"=== Processing environment: {env_name} ===")
 
@@ -243,9 +243,8 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
             q1_data['smoothed'] = q1_data['std_return'].rolling(SMOOTHING_WINDOW, min_periods=1).mean()
             
             best_q, best_clip = method_best[method]
-            # Label logic
-
-            line_label = method  # e.g., "maxentirl"
+            # Use display name instead of internal method name
+            line_label = METHOD_DISPLAY_NAMES.get(method, method)
             
             ax.plot(
                 q1_data['episode'],
@@ -268,7 +267,8 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
                 
                 # If best_q=4 => "method + SOAR", else => "_nolegend_"
                 if best_q == 4:
-                    best_label = f"{method} + SOAR (Ours)"
+                    display_name = METHOD_DISPLAY_NAMES.get(method, method)
+                    best_label = f"{display_name} + SOAR (Ours)"
                 else:
                     best_label = "_nolegend_"
                 
@@ -298,13 +298,6 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
     
     # (c) Expert line at y=1.0
     ax.axhline(y=1.0, color='black', linestyle=':', label='Expert')
-    # ax.text(
-    #     0.02, 1.01,  # x=2% from the left, y=1% above the line
-    #     "Expert = 1",
-    #     transform=ax.get_yaxis_transform(),
-    #     ha='left', va='bottom',
-    #     color='black'
-    # )
     
     # (d) Decorate
     ax.set_title(env_name, y=1.02)  # move title a bit higher
@@ -323,7 +316,7 @@ def main():
     n_envs = len(ENVIRONMENTS)
     fig, axes = plt.subplots(
         1, n_envs,
-        figsize=(5 * n_envs, 6),  # <- increase height from 4 to 6
+        figsize=(5 * n_envs, 6),
         sharey=True
     )
 
@@ -348,8 +341,7 @@ def main():
         if l not in by_label:
             by_label[l] = h
     
-    # Place legend near the bottom, a bit lower than default
-    # Adjust 'bbox_to_anchor' as needed
+    # Place legend
     fig.legend(
         by_label.values(),
         by_label.keys(),
@@ -359,19 +351,17 @@ def main():
     )
     
     # Adjust spacing
-    # top=0.88 => leave some space for the suptitle
-    # bottom=0.08 => to accommodate the legend
     fig.subplots_adjust(
-        top=0.83,    # move the top boundary down a bit
-        bottom=0.25, # move the bottom boundary up a bit
+        top=0.83,
+        bottom=0.25,
         left=0.06,
         right=0.98
     )
 
     fig.suptitle(
-        " State‐Action Methods",
+        " State‐Only Methods",
         y=0.96,
-        fontsize=23  # <-- set a larger font size
+        fontsize=23
     )
 
     out_dir = Path("plots")
