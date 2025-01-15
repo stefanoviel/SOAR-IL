@@ -1,7 +1,7 @@
-obj: maxentirl
+obj: opt-AIL_sa
 IS: false
 seed: 1
-cuda: 5
+cuda: 7
 env:
   env_name: Ant-v5
   T: 1000

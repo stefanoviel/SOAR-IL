@@ -1,7 +1,7 @@
-obj: opt-AIL
+obj: opt-AIL_sa
 IS: false
-seed: 23
-cuda: -1
+seed: 1
+cuda: 6
 experiment_tag: 32_traj_10_resample_seed_2
 env:
   env_name: Walker2d-v5

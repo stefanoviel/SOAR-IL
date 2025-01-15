@@ -1,4 +1,4 @@
-obj: opt-AIL
+obj: rkl
 IS: false
 seed: 23
 cuda: -1

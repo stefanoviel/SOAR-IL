@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Define all environments to iterate over
-environments=("ant" "halfcheetah" "hopper" "humanoid" "walker2d")
+environments=("ant" "hopper" "humanoid" "walker2d")
 
 # Optionally create an output directory if it doesn't exist
 mkdir -p outputs

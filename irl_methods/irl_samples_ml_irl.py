@@ -51,7 +51,7 @@ def ML_sa_loss(div: str, agent_samples, expert_samples, reward_func, device):
         agent_samples is numpy array of shape (N, T, d) 
         expert_samples is numpy array of shape (N, T, d) or (N, d)
     '''
-    assert div in ['maxentirl_sa']
+    assert div in ['maxentirl_sa', 'opt-AIL_sa']
     sA, aA, _ = agent_samples
     print(sA.shape,aA.shape)
     sA=np.concatenate([sA,aA],2)
@@ -182,12 +182,12 @@ if __name__ == "__main__":
     v = yaml.load(open(args.config))
 
     # Validate num_q_pairs if opt_AIL is true
-    if v['obj'] == 'opt-AIL':
+    if v['obj'] == 'opt-AIL' or v['obj'] == 'opt-AIL_sa':
         if args.num_q_pairs != 1:
             raise ValueError("num_q_pairs must be one when opt_AIL is true to conform to the description of opt-AIL")
 
     # assumptions
-    assert v['obj'] in ['maxentirl','maxentirl_sa', 'opt-AIL']
+    assert v['obj'] in ['maxentirl','maxentirl_sa', 'opt-AIL', 'opt-AIL_sa']
     assert v['IS'] == False
     
     # Use parsed arguments
@@ -226,8 +226,7 @@ if __name__ == "__main__":
 
 
     # TODO: change back 
-    # exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
-    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/testing" # task/obj/date structure
+    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
     # exp_id = 'debug'
     if not os.path.exists(exp_id):
         os.makedirs(exp_id)
@@ -270,7 +269,7 @@ if __name__ == "__main__":
     # Initilialize reward as a neural network
     reward_func = MLPReward(len(state_indices), **v['reward'], device=device).to(device)
     use_actions_for_reward = False
-    if v['obj']=='maxentirl_sa':
+    if v['obj']=='maxentirl_sa' or v['obj']=='opt-AIL_sa':
         use_actions_for_reward=True
         reward_func = MLPReward(len(state_indices)+action_size, **v['reward'], device=device).to(device)
 
@@ -308,7 +307,7 @@ if __name__ == "__main__":
                 uncertainty_coef=uncertainty_coef,
                 q_std_clip=q_std_clip,
                 use_actions_for_reward=use_actions_for_reward,
-                opt_AIL=v['obj'] == 'opt-AIL',
+                opt_AIL= (v['obj'] == 'opt-AIL') or (v['obj'] == 'opt-AIL_sa'),
                 **v['sac']
             )
         
@@ -345,7 +344,7 @@ if __name__ == "__main__":
 
             if v['obj'] == 'maxentirl' or v['obj'] == 'opt-AIL':
                 loss = ML_loss(v['obj'], samples, expert_samples, reward_func, device)
-            elif v['obj'] == 'maxentirl_sa':
+            elif v['obj'] == 'maxentirl_sa' or v['obj'] == 'opt-AIL_sa':
                 loss = ML_sa_loss(v['obj'], samples, expert_samples_sa, reward_func, device) 
             
             reward_losses.append(loss.item())
