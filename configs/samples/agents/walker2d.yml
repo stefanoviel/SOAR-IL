@@ -1,6 +1,6 @@
-obj: opt-AIL_sa
+obj: maxentirl
 IS: false
-seed: 1
+seed: 23
 cuda: -1
 experiment_tag: 32_traj_10_resample_seed_2
 env:

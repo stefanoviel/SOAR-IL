@@ -37,6 +37,13 @@ class ReplayBuffer:
         self.ptr, self.size, self.max_size = 0, 0, size
         self.device = device
         # print(device)
+        self.rng = np.random.RandomState()
+
+    def set_seed(self, seed):
+        """Improved seeding for replay buffer"""
+        self.rng = np.random.RandomState(seed)
+        # If using PyTorch for sampling, also set its seed
+        torch.manual_seed(seed)
 
     def store_batch(self, obs, act, rew, next_obs, done):
         num = len(obs)
@@ -69,7 +76,8 @@ class ReplayBuffer:
         self.size = min(self.size+1, self.max_size)
 
     def sample_batch(self, batch_size=32):
-        idxs = np.random.randint(0, self.size, size=batch_size)
+        """Update sampling to use seeded RNG"""
+        idxs = self.rng.randint(0, self.size, size=batch_size)
         batch = dict(obs=self.state[idxs],
                      obs2=self.next_state[idxs],
                      act=self.action[idxs],
@@ -582,6 +590,7 @@ class SAC:
             else:
                 # NOTE: assert training agent policy
                 if self.replay_buffer.size>=self.update_after and t % self.update_every == 0:
+                    start_time = time.time()
                     for j in range(self.update_every):
                         batch = self.replay_buffer.sample_batch(self.batch_size)
                         obs = batch['obs'][:, self.reward_state_indices]
