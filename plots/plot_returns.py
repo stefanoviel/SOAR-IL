@@ -3,6 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import List, Union
 from pathlib import Path
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+from typing import List, Dict, Any
 
 def load_and_process_data(file_path: str) -> pd.DataFrame:
     """Load and process a single CSV file."""
@@ -78,7 +83,6 @@ def create_returns_plot(
                 data_subset = df[(df['q'] == q) & (df['clip'] == clip)]
                 label = f'q={q}, clip={clip}'
                 
-
                 if len(data_subset) > 0:
                     grouped = data_subset.groupby('episode')['Real Det Return'].agg(['mean', 'std']).reset_index()
                     plt.plot(grouped['episode'], grouped['mean'], label=label)
@@ -96,8 +100,11 @@ def create_returns_plot(
     plt.xlabel('Episode')
     plt.ylabel('Real Det Return')
     plt.title(f'Average Returns vs Episodes for {env_name} ({method})')
-    plt.legend()
+    # Place legend outside the plot on the right
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True)
+    # Adjust layout to prevent legend cutoff
+    plt.tight_layout()
     
     # Create filename
     conf_str = "" if show_confidence else "without_conf_int_"
@@ -106,12 +113,12 @@ def create_returns_plot(
     filename = f"{env_name}_{method}_{q_str}_{conf_str}{clip_str}.png"
     
     # Create directory structure: plots/env_name/method/
-    save_path = Path("plots") / env_name / method
+    save_path = Path("plots") / "gridsearch" 
     save_path.mkdir(parents=True, exist_ok=True)
     print('save_path', save_path)
     
-    # Save plot
-    plt.savefig(save_path / filename)
+    # Save plot with adjusted figure size to accommodate legend
+    plt.savefig(save_path / filename, bbox_inches='tight')
     plt.close()
 
 def plot_single_file(
@@ -176,39 +183,197 @@ def plot_multiple_files(
         # Create individual plot for this file
         create_returns_plot([df], q_values, clip_values, env_name, method, show_confidence, max_episodes)
 
-# Example usage:
-if __name__ == "__main__":
-    # Example parameters
-    q_values = [1.0, 4.0]
-    clip_values = [0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0]
 
+def create_method_comparison_figure(
+    folder_path: str,
+    method: str,
+    environments: List[str] = ['Hopper-v5', 'Walker2d-v5', 'Humanoid-v5', 'Ant-v5'],
+    clip_values: List[float] = [0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0],
+    max_episodes_dict: dict = None,
+    show_confidence: bool = True
+) -> None:
+    """
+    Create a figure with subplots comparing different environments for a specific method.
+    Each subplot shows the performance across different clipping values.
     
-    # Dictionary specifying max episodes for each environment
-    max_episodes_dict = {
-        "Hopper-v5": 1e6,
-        "Walker2d-v5": 1.5e6,
-        "Ant-v5": 1.2e6,
-        "Humanoid-v5": 1e6,
-        "HalfCheetah-v5": 1.5e6,
-        # Add more environments as needed
-    }
+    Args:
+        folder_path: Path to the folder containing the CSV files
+        method: Method to analyze (e.g., 'maxentirl', 'rkl', 'cisl', 'maxentirl_sa')
+        environments: List of environments to include
+        clip_values: List of clipping values to plot
+        max_episodes_dict: Dictionary specifying maximum episodes for each environment
+        show_confidence: Whether to show confidence intervals
+    """
+    folder = Path(folder_path)
     
-    # Single file example
-    # plot_single_file(
-    #     "plots/cached_data/Walker2d-v5_exp-16_maxentirl_sa_data.csv",
-    #     q_values,
-    #     clip_values,
-    #     show_confidence=False,
-    #     max_episodes_dict=max_episodes_dict,
-    #     filter_dynamic_clipping=True
-    # )
+    # Create a figure with subplots
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+    axes = axes.flatten()
     
-    # Multiple files example - now using folder path
-    plot_multiple_files(
-        "processed_data",  # Just specify the folder path
-        q_values,
-        clip_values,
-        show_confidence=False,
-        max_episodes_dict=max_episodes_dict,
-        filter_dynamic_clipping=True
-    )
+    # Dictionary to store all unique clip values found in the data
+    all_clip_values = set()
+    env_clip_data = {}
+    
+    # First pass: collect all clip values and prepare data
+    for env in environments:
+        pattern = f"{env}_*_{method}_data.csv"
+        files = list(folder.glob(pattern))
+        
+        if not files:
+            print(f"No files found for {env} with method {method}")
+            continue
+            
+        # Load and combine data from all matching files
+        dfs = []
+        for file in files:
+            df = pd.read_csv(file)
+            dfs.append(df)
+            
+        if not dfs:
+            continue
+            
+        combined_df = pd.concat(dfs, ignore_index=True)
+        
+        # Truncate data if max_episodes is specified
+        if max_episodes_dict and env in max_episodes_dict:
+            combined_df = combined_df[combined_df['episode'] <= max_episodes_dict[env]]
+        
+        # Store unique clip values and processed data
+        env_clip_values = combined_df['clip'].unique()
+        all_clip_values.update(env_clip_values)
+        env_clip_data[env] = combined_df
+    
+    # Sort clip values for consistent colors
+    all_clip_values = sorted(all_clip_values)
+    
+    # Create color map for all possible clip values
+    color_map = plt.cm.get_cmap('tab20')(np.linspace(0, 1, len(all_clip_values)))
+    clip_to_color = dict(zip(all_clip_values, color_map))
+    
+    # Store all lines and labels for the shared legend
+    legend_elements = []
+    
+    # Second pass: create plots
+    for idx, env in enumerate(environments):
+        ax = axes[idx]
+        
+        if env not in env_clip_data:
+            continue
+            
+        combined_df = env_clip_data[env]
+        
+        # Plot each clipping value
+        for clip in all_clip_values:
+            data_subset = combined_df[combined_df['clip'] == clip]
+            if len(data_subset) > 0:
+                grouped = data_subset.groupby('episode')['Real Det Return'].agg(['mean', 'std']).reset_index()
+                line = ax.plot(grouped['episode'], grouped['mean'], 
+                             color=clip_to_color[clip], 
+                             label=f'clip={clip}')
+                
+                if show_confidence:
+                    n_seeds = len(data_subset['seed'].unique())
+                    std_error = grouped['std'] / np.sqrt(n_seeds)
+                    ax.fill_between(
+                        grouped['episode'],
+                        grouped['mean'] - std_error,
+                        grouped['mean'] + std_error,
+                        color=clip_to_color[clip],
+                        alpha=0.2
+                    )
+                
+                # Only store lines for legend from the first time we see each clip value
+                if not any(f'clip={clip}' == label.get_label() for label in legend_elements):
+                    legend_elements.extend(line)
+        
+        # Customize subplot
+        ax.set_title(env.replace('-v5', ''))
+        ax.set_xlabel('Episode')
+        ax.set_ylabel('Average Return')
+        ax.grid(True)
+    
+    # Add shared legend outside the plots
+    fig.legend(legend_elements, [f'clip={clip}' for clip in all_clip_values], 
+              bbox_to_anchor=(1.05, 0.5), loc='center left')
+    
+    # Add overall title
+    fig.suptitle(f'Performance Comparison for {method.upper()}', 
+                y=1.02, fontsize=14)
+    
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+    
+    # Save figure
+    save_path = Path("plots") / "method_comparisons"
+    save_path.mkdir(parents=True, exist_ok=True)
+    confidence_suffix = "_with_ci" if show_confidence else "_without_ci"
+    plt.savefig(save_path / f'{method}_comparison{confidence_suffix}.png', 
+                bbox_inches='tight', dpi=300)
+    plt.close()
+
+# Example usage
+def create_all_method_comparisons(
+    folder_path: str,
+    methods: List[str] = ['maxentirl', 'rkl', 'cisl', 'maxentirl_sa'],
+    max_episodes_dict: dict = {
+        'Hopper-v5': 1e6,
+        'Walker2d-v5': 1.5e6,
+        'Ant-v5': 1.2e6,
+        'Humanoid-v5': 1e6,
+        'HalfCheetah-v5': 1.5e6,
+    },
+    show_confidence: bool = True
+):
+    """
+    Create comparison figures for all specified methods.
+    
+    Args:
+        folder_path: Path to the folder containing the CSV files
+        methods: List of methods to analyze
+        max_episodes_dict: Dictionary specifying maximum episodes for each environment
+        show_confidence: Whether to show confidence intervals
+    """
+    for method in methods:
+        print(f"Creating comparison figure for {method}...")
+        create_method_comparison_figure(
+            folder_path, 
+            method, 
+            max_episodes_dict=max_episodes_dict,
+            show_confidence=show_confidence
+        )
+        print(f"Completed {method}")
+
+
+# Example usage:
+# if __name__ == "__main__":
+#     # Example parameters
+#     q_values = [1.0, 4.0]
+#     clip_values = [0.1, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 500.0]
+    
+#     # Dictionary specifying max episodes for each environment
+#     max_episodes_dict = {
+#         "Hopper-v5": 1e6,
+#         "Walker2d-v5": 1.5e6,
+#         "Ant-v5": 1.2e6,
+#         "Humanoid-v5": 1e6,
+#         "HalfCheetah-v5": 1.5e6,
+#         # Add more environments as needed
+#     }
+    
+#     # Multiple files example - now using folder path
+#     plot_multiple_files(
+#         "processed_data",  # Just specify the folder path
+#         q_values,
+#         clip_values,
+#         show_confidence=False,
+#         max_episodes_dict=max_episodes_dict,
+#         filter_dynamic_clipping=True
+#     )
+
+# Usage example:
+if __name__ == "__main__":
+    # Create figures with confidence intervals
+    # create_all_method_comparisons("processed_data", show_confidence=True)
+    # Create figures without confidence intervals
+    create_all_method_comparisons("processed_data", show_confidence=False)
+    
