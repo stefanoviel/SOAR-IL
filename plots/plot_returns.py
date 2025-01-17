@@ -24,7 +24,7 @@ def create_returns_plot(
 ) -> None:
     """Create and save a plot of returns for specified q and clip values."""
     
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 7))
     
     # Convert single DataFrame to list for consistent processing
     if isinstance(data, pd.DataFrame):
@@ -195,20 +195,18 @@ def create_method_comparison_figure(
     """
     Create a figure with subplots comparing different environments for a specific method.
     Each subplot shows the performance across different clipping values.
-    
-    Args:
-        folder_path: Path to the folder containing the CSV files
-        method: Method to analyze (e.g., 'maxentirl', 'rkl', 'cisl', 'maxentirl_sa')
-        environments: List of environments to include
-        clip_values: List of clipping values to plot
-        max_episodes_dict: Dictionary specifying maximum episodes for each environment
-        show_confidence: Whether to show confidence intervals
     """
     folder = Path(folder_path)
     
     # Create a figure with subplots
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     axes = axes.flatten()
+    
+    # Set font sizes
+    TITLE_SIZE = 16
+    AXIS_LABEL_SIZE = 14
+    TICK_SIZE = 12
+    LEGEND_SIZE = 12
     
     # Dictionary to store all unique clip values found in the data
     all_clip_values = set()
@@ -223,7 +221,6 @@ def create_method_comparison_figure(
             print(f"No files found for {env} with method {method}")
             continue
             
-        # Load and combine data from all matching files
         dfs = []
         for file in files:
             df = pd.read_csv(file)
@@ -234,26 +231,19 @@ def create_method_comparison_figure(
             
         combined_df = pd.concat(dfs, ignore_index=True)
         
-        # Truncate data if max_episodes is specified
         if max_episodes_dict and env in max_episodes_dict:
             combined_df = combined_df[combined_df['episode'] <= max_episodes_dict[env]]
         
-        # Store unique clip values and processed data
         env_clip_values = combined_df['clip'].unique()
         all_clip_values.update(env_clip_values)
         env_clip_data[env] = combined_df
     
-    # Sort clip values for consistent colors
     all_clip_values = sorted(all_clip_values)
-    
-    # Create color map for all possible clip values
     color_map = plt.cm.get_cmap('tab20')(np.linspace(0, 1, len(all_clip_values)))
     clip_to_color = dict(zip(all_clip_values, color_map))
     
-    # Store all lines and labels for the shared legend
     legend_elements = []
     
-    # Second pass: create plots
     for idx, env in enumerate(environments):
         ax = axes[idx]
         
@@ -262,7 +252,6 @@ def create_method_comparison_figure(
             
         combined_df = env_clip_data[env]
         
-        # Plot each clipping value
         for clip in all_clip_values:
             data_subset = combined_df[combined_df['clip'] == clip]
             if len(data_subset) > 0:
@@ -282,36 +271,47 @@ def create_method_comparison_figure(
                         alpha=0.2
                     )
                 
-                # Only store lines for legend from the first time we see each clip value
                 if not any(f'clip={clip}' == label.get_label() for label in legend_elements):
                     legend_elements.extend(line)
         
-        # Customize subplot
-        ax.set_title(env.replace('-v5', ''))
-        ax.set_xlabel('Episode')
-        ax.set_ylabel('Average Return')
+        # Customize subplot with larger fonts
+        ax.set_title(env.replace('-v5', ''), fontsize=TITLE_SIZE)
+        ax.set_xlabel('Episode', fontsize=AXIS_LABEL_SIZE)
+        ax.set_ylabel('Average Return', fontsize=AXIS_LABEL_SIZE)
         ax.grid(True)
+        
+        # Reduce tick frequency and increase font size
+        ax.tick_params(axis='both', which='major', labelsize=TICK_SIZE)
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of x-ticks
+        ax.yaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of y-ticks
     
-    # Add shared legend outside the plots
-    fig.legend(legend_elements, [f'clip={clip}' for clip in all_clip_values], 
-              bbox_to_anchor=(1.05, 0.5), loc='center left')
+    # Adjust layout first
+    plt.tight_layout(rect=[0, 0, 1, 1])  # Leave space at top for title
     
-    # Add overall title
-    fig.suptitle(f'Performance Comparison for {method.upper()}', 
-                y=1.02, fontsize=14)
+    # Add overall title with larger font - now after tight_layout
+    # fig.suptitle(f'Performance Comparison for {method.upper()}', 
+    #             fontsize=TITLE_SIZE + 2,
+    #             y=0.98)  # Move title up slightly
     
-    # Adjust layout to prevent overlap
-    plt.tight_layout()
+    # Add shared legend below the plots
+    legend = fig.legend(legend_elements, 
+                       [f'clip={clip}' for clip in all_clip_values],
+                       loc='center',
+                       bbox_to_anchor=(0.5, -0.05),
+                       ncol=4,
+                       fontsize=LEGEND_SIZE)
     
-    # Save figure
+    # Save figure with extra bottom margin for legend
     save_path = Path("plots") / "method_comparisons"
     save_path.mkdir(parents=True, exist_ok=True)
     confidence_suffix = "_with_ci" if show_confidence else "_without_ci"
     plt.savefig(save_path / f'{method}_comparison{confidence_suffix}.png', 
-                bbox_inches='tight', dpi=300)
+                bbox_inches='tight',
+                dpi=300,
+                bbox_extra_artists=(legend,))
     plt.close()
 
-# Example usage
+# The create_all_method_comparisons function remains the same
 def create_all_method_comparisons(
     folder_path: str,
     methods: List[str] = ['maxentirl', 'rkl', 'cisl', 'maxentirl_sa'],
@@ -324,15 +324,6 @@ def create_all_method_comparisons(
     },
     show_confidence: bool = True
 ):
-    """
-    Create comparison figures for all specified methods.
-    
-    Args:
-        folder_path: Path to the folder containing the CSV files
-        methods: List of methods to analyze
-        max_episodes_dict: Dictionary specifying maximum episodes for each environment
-        show_confidence: Whether to show confidence intervals
-    """
     for method in methods:
         print(f"Creating comparison figure for {method}...")
         create_method_comparison_figure(
