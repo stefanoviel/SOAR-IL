@@ -103,7 +103,7 @@ def create_returns_plot(
     conf_str = "" if show_confidence else "without_conf_int_"
     q_str = "_".join(str(q) for q in sorted(q_values) if q != 1.0)
     clip_str = "_".join(str(clip) for clip in sorted(clip_values))
-    filename = f"{env_name}_average_real_det_return_{q_str}_{conf_str}{clip_str}.png"
+    filename = f"{env_name}_{method}_{q_str}_{conf_str}{clip_str}.png"
     
     # Create directory structure: plots/env_name/method/
     save_path = Path("plots") / env_name / method
