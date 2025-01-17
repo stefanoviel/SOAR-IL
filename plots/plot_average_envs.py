@@ -25,6 +25,14 @@ ENVIRONMENTS = [
 
 METHODS = ["cisl", "maxentirl_sa", "maxentirl", "rkl"]
 
+# Add display name mapping for methods
+METHOD_DISPLAY_NAMES = {
+    "maxentirl": "ML-IRL",
+    "maxentirl_sa": "ML-IRL (SA)",
+    "cisl": "CISL",
+    "rkl": "RKL"
+}
+
 METHOD_COLORS = {
     "maxentirl": "blue",
     "rkl": "red",
@@ -42,6 +50,7 @@ EXPERT_FILE_DICT = {
     "Walker2d-v5": "expert_data/meta/Walker2d-v5_1.txt",
     "Humanoid-v5": "expert_data/meta/Humanoid-v5_1.txt",
 }
+
 
 MAX_EPISODES_DICT = {
     "Hopper-v5": 1e6,
@@ -144,10 +153,10 @@ def get_normalized_data_for_method_env(env_name, method_name):
     return df_mean_std, (best_q, best_clip)
 
 # [Previous imports and constant definitions remain the same...]
-
 def plot_method_average(method, ax):
     """Plot average performance across environments for a specific method."""
     color = METHOD_COLORS.get(method, "black")
+    display_name = METHOD_DISPLAY_NAMES.get(method, method.upper())
     
     # Collect data for all environments
     q1_data_list = []
@@ -190,8 +199,8 @@ def plot_method_average(method, ax):
             avg_returns.append(np.mean(returns))
             
         smoothed_returns = pd.Series(avg_returns).rolling(SMOOTHING_WINDOW, min_periods=1).mean()
-        line, = ax.plot(ep_range, smoothed_returns, linestyle='--', color='black', 
-                       label='Base Method' if method == METHODS[0] else "_nolegend_")
+        line, = ax.plot(ep_range, smoothed_returns, linestyle='--', color=color, 
+                       label=f'{display_name} (Base)')
     
     if best_data_list:
         # Interpolate and average best data
@@ -208,15 +217,17 @@ def plot_method_average(method, ax):
             avg_returns.append(np.mean(returns))
             
         smoothed_returns = pd.Series(avg_returns).rolling(SMOOTHING_WINDOW, min_periods=1).mean()
-        ax.plot(ep_range, smoothed_returns, linestyle='-', color='black',
-               label='+ SOAR (Ours)' if method == METHODS[0] else "_nolegend_")
+        ax.plot(ep_range, smoothed_returns, linestyle='-', color=color,
+               label=f'{display_name} + SOAR')
     
-    # Add expert line (only add to legend for first plot)
-    ax.axhline(y=1.0, color='black', linestyle=':', 
-               label='Expert' if method == METHODS[0] else "_nolegend_")
+    # Add expert line with label only for first method
+    if method == METHODS[-1]:
+        ax.plot([min_ep, max_ep], [1.0, 1.0], color='black', linestyle=':', label='Expert')
+    else:
+        ax.plot([min_ep, max_ep], [1.0, 1.0], color='black', linestyle=':', label=None)
     
-    # Add decorations
-    ax.set_title(f"{method.upper()}", y=1.02)
+    # Add decorations with the display name instead of the method name
+    ax.set_title(f"{display_name}", y=1.02)
     ax.set_xlabel("Episode")
     ax.set_ylim(-0.05, 1.05)
     ax.grid(True)
@@ -244,11 +255,31 @@ def main():
         fontsize=23
     )
     
-    # Create simplified legend
+    # Collect all legend handles and labels
+    handles = []
+    labels = []
+    for ax in axes:
+        h, l = ax.get_legend_handles_labels()
+        handles.extend(h)
+        labels.extend(l)
+    
+    # Remove duplicate expert entries
+    unique_handles = []
+    unique_labels = []
+    seen_labels = set()
+    for h, l in zip(handles, labels):
+        if l not in seen_labels:
+            unique_handles.append(h)
+            unique_labels.append(l)
+            seen_labels.add(l)
+    
+    # Create combined legend
     fig.legend(
+        unique_handles,
+        unique_labels,
         loc='lower center',
         bbox_to_anchor=(0.5, 0.02),
-        ncol=3
+        ncol=5  # Adjust this number based on how many methods you have
     )
     
     # Save the figure
@@ -257,6 +288,8 @@ def main():
     out_path = out_dir / "method_averages_comparison.png"
     fig.savefig(out_path, dpi=300)
     print(f"Saved combined figure to {out_path}")
+
+
 
 if __name__ == "__main__":
     main()

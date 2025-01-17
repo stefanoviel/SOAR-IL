@@ -27,8 +27,8 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-# METHODS = ["cisl", "maxentirl_sa"]
-METHODS = ["maxentirl", "rkl"]
+METHODS = ["cisl", "maxentirl_sa"]
+# METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
 # BASELINES = ["gail", "sqil"]
@@ -212,6 +212,8 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
         # find best
         auc_df = compute_auc(df_mean_std, use_trapz=True)
         best_q, best_clip = find_best_clipping(auc_df, skip_q=1.0)
+
+        print(f"  {method}: Best q={best_q}, clip={best_clip}")
         
         method_results[method] = df_mean_std
         method_best[method] = (best_q, best_clip)
