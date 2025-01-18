@@ -203,10 +203,10 @@ def create_method_comparison_figure(
     
     # Set font sizes
     TITLE_SIZE = 25
-    AXIS_LABEL_SIZE = 22
-    TICK_SIZE = 22
-    LEGEND_SIZE = 22
-    AXIS_UNIT_SIZE = 20
+    AXIS_LABEL_SIZE = 20
+    TICK_SIZE = 18
+    LEGEND_SIZE = 18 
+    AXIS_UNIT_SIZE = 16
 
     # Dictionary to store all unique clip values found in the data
     all_clip_values = set()
@@ -256,6 +256,9 @@ def create_method_comparison_figure(
             data_subset = combined_df[combined_df['clip'] == clip]
             if len(data_subset) > 0:
                 grouped = data_subset.groupby('episode')['Real Det Return'].agg(['mean', 'std']).reset_index()
+                # Convert episode values to millions
+                grouped['episode'] = grouped['episode'] / 1e6
+                
                 line = ax.plot(grouped['episode'], grouped['mean'], 
                              color=clip_to_color[clip], 
                              label=f'clip={clip}')
@@ -276,23 +279,22 @@ def create_method_comparison_figure(
         
         # Customize subplot with larger fonts
         ax.set_title(env.replace('-v5', ''), fontsize=TITLE_SIZE)
-        ax.set_xlabel('Episode', fontsize=AXIS_LABEL_SIZE)
+        ax.set_xlabel('Episode (×$10^6$)', fontsize=AXIS_LABEL_SIZE)
         ax.set_ylabel('Average Return', fontsize=AXIS_LABEL_SIZE)
         ax.grid(True)
         
-        # Reduce tick frequency and increase font size
+        # Reduce number of ticks and increase font size
         ax.tick_params(axis='both', which='major', labelsize=TICK_SIZE)
-        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
-        ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.xaxis.set_major_locator(plt.MaxNLocator(3))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(3))
 
-        # Increase size of scientific notation on both axes
-        ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        # Turn off scientific notation for x-axis since we're now using millions
+        ax.ticklabel_format(style='plain', axis='x')
+        # Keep scientific notation for y-axis
         ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
         
-        # Get the offset text objects for both axes and set their fontsize
-        x_offset = ax.xaxis.get_offset_text()
+        # Get the offset text objects for y-axis and set fontsize
         y_offset = ax.yaxis.get_offset_text()
-        x_offset.set_fontsize(AXIS_UNIT_SIZE)
         y_offset.set_fontsize(AXIS_UNIT_SIZE)
     
     # Adjust layout first
@@ -323,7 +325,6 @@ def create_method_comparison_figure(
                 dpi=300,
                 bbox_extra_artists=(legend,))
     plt.close()
-
 
 # The create_all_method_comparisons function remains the same
 def create_all_method_comparisons(
