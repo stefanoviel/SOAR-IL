@@ -201,12 +201,11 @@ def create_method_comparison_figure(
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     axes = axes.flatten()
     
-    # Set font sizes
     TITLE_SIZE = 25
-    AXIS_LABEL_SIZE = 20
-    TICK_SIZE = 18
-    LEGEND_SIZE = 18 
-    AXIS_UNIT_SIZE = 16
+    AXIS_LABEL_SIZE = 25
+    TICK_SIZE = 25
+    LEGEND_SIZE = 25
+    AXIS_UNIT_SIZE = 25
 
     # Dictionary to store all unique clip values found in the data
     all_clip_values = set()
