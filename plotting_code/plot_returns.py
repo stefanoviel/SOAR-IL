@@ -183,7 +183,6 @@ def plot_multiple_files(
         # Create individual plot for this file
         create_returns_plot([df], q_values, clip_values, env_name, method, show_confidence, max_episodes)
 
-
 def create_method_comparison_figure(
     folder_path: str,
     method: str,
@@ -203,11 +202,12 @@ def create_method_comparison_figure(
     axes = axes.flatten()
     
     # Set font sizes
-    TITLE_SIZE = 16
-    AXIS_LABEL_SIZE = 14
-    TICK_SIZE = 12
-    LEGEND_SIZE = 12
-    
+    TITLE_SIZE = 25
+    AXIS_LABEL_SIZE = 22
+    TICK_SIZE = 22
+    LEGEND_SIZE = 22
+    AXIS_UNIT_SIZE = 20
+
     # Dictionary to store all unique clip values found in the data
     all_clip_values = set()
     env_clip_data = {}
@@ -282,24 +282,37 @@ def create_method_comparison_figure(
         
         # Reduce tick frequency and increase font size
         ax.tick_params(axis='both', which='major', labelsize=TICK_SIZE)
-        ax.xaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of x-ticks
-        ax.yaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of y-ticks
+        ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+
+        # Increase size of scientific notation on both axes
+        ax.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
+        ax.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+        
+        # Get the offset text objects for both axes and set their fontsize
+        x_offset = ax.xaxis.get_offset_text()
+        y_offset = ax.yaxis.get_offset_text()
+        x_offset.set_fontsize(AXIS_UNIT_SIZE)
+        y_offset.set_fontsize(AXIS_UNIT_SIZE)
     
     # Adjust layout first
-    plt.tight_layout(rect=[0, 0, 1, 1])  # Leave space at top for title
+    plt.tight_layout(rect=[0, 0, 1, 0.95])  # Leave more space at bottom for legend
     
-    # Add overall title with larger font - now after tight_layout
-    # fig.suptitle(f'Performance Comparison for {method.upper()}', 
-    #             fontsize=TITLE_SIZE + 2,
-    #             y=0.98)  # Move title up slightly
+    # Calculate the number of columns based on the figure width
+    legend_width = fig.get_size_inches()[0] * 0.9  # Use 90% of figure width
+    item_width = 2.5  # Approximate width of each legend item in inches
+    n_items = len(all_clip_values)
+    ncols = min(n_items, max(1, int(legend_width / item_width)))
     
-    # Add shared legend below the plots
+    # Add shared legend below the plots with calculated number of columns
     legend = fig.legend(legend_elements, 
                        [f'clip={clip}' for clip in all_clip_values],
                        loc='center',
                        bbox_to_anchor=(0.5, -0.05),
-                       ncol=4,
-                       fontsize=LEGEND_SIZE)
+                       ncol=ncols,
+                       fontsize=LEGEND_SIZE,
+                       columnspacing=1.0,
+                       handletextpad=0.5)
     
     # Save figure with extra bottom margin for legend
     save_path = Path("plots") / "method_comparisons"
@@ -310,6 +323,7 @@ def create_method_comparison_figure(
                 dpi=300,
                 bbox_extra_artists=(legend,))
     plt.close()
+
 
 # The create_all_method_comparisons function remains the same
 def create_all_method_comparisons(

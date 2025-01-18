@@ -3,7 +3,20 @@ all env plots improvements:
     return ration
     make lines slightly more thiker
     add opt-ail-sa
+    should i add ci? 
 
+all clipping values plots
+    font is too small
+
+plot clipping is necessary: 
+    * change  
+    
+
+plto justification of why only 4 nn. It needs to be easy to see that with multiple neural network it doesn't make a lot of a difference. 
+    * more compelx env to see some difference
+    * different clipping values? No, we need to highlight that more NN doens't imply improvement. How do you choose the clipping? 5 seems good enough for all. 
+    * which algoriothm? only one, ML-IRL? 
+    * for all environemtns 1 3 4 5 10
 
 
 
