@@ -1,4 +1,9 @@
-opt-ail state action
-halfchetaah retrain with new trajectories. 
+
+all env plots improvements:
+    return ration
+    make lines slightly more thiker
+    add opt-ail-sa
+
+
 
 

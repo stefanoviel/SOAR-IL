@@ -12,7 +12,7 @@ irl:
   n_itrs: 1500
   save_interval: 0
   eval_episodes: 20
-  expert_episodes: 16
+  expert_episodes: 1
   resample_episodes: 10
 bc:
   epochs: 10000
