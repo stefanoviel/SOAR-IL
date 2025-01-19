@@ -6,11 +6,7 @@ all env plots improvements:
     should i add ci? 
 
 all clipping values plots
-    font is too small
-
-plot clipping is necessary: 
-    * change  
-    
+    font is too small    
 
 plto justification of why only 4 nn. It needs to be easy to see that with multiple neural network it doesn't make a lot of a difference. 
     * more compelx env to see some difference
@@ -19,4 +15,5 @@ plto justification of why only 4 nn. It needs to be easy to see that with multip
     * for all environemtns 1 3 4 5 10
 
 
-
+plot clipping is necessary, there are probably more run than necessary. 
+runnare 

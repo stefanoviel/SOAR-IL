@@ -18,6 +18,8 @@ mpl.rcParams['legend.fontsize'] = 14
 
 # ========== USER DEFINED VARIABLES ==========
 
+EXPERIMENT_NUMBER = 16  # Change this to 1 or 16 as needed
+
 ENVIRONMENTS = [
     "Ant-v5",
     "Hopper-v5",
@@ -47,7 +49,8 @@ METHOD_DISPLAY_NAMES = {
     "maxentirl": "ML-IRL",
     "maxentirl_sa": "ML-IRL (SA)",
     "cisl": "cisl",
-    "rkl": "rkl"
+    "rkl": "rkl",
+    "opt-AIL_sa": "opt-AIL (SA)",
 }
 
 # Unique colors for baselines
@@ -55,6 +58,7 @@ BASELINE_COLORS = {
     "gail": "orange",
     "sqil": "brown",
     "opt-AIL": "cyan",
+    "opt-AIL_sa": "magenta",
 }
 
 PROCESSED_DATA_DIR = "processed_data"
@@ -82,24 +86,23 @@ EXPERT_FILE_DICT = {
 
 # ========== HELPER FUNCTIONS ==========
 
-def load_processed_data_for_method(env_name: str, method_name: str, data_dir: str) -> pd.DataFrame:
+def load_processed_data_for_method(env_name: str, method_name: str, data_dir: str, exp_num: int) -> pd.DataFrame:
     """
-    Finds a CSV in data_dir matching:
-      {env_name}_exp-*_{method_name}_data.csv
+    Finds a CSV in data_dir matching the specific experiment number:
+      {env_name}_exp-{exp_num}_{method_name}_data.csv
     Returns the loaded DataFrame, or None if not found.
-    If multiple CSVs match, picks the first one.
     """
-    import fnmatch
-    pattern = os.path.join(data_dir, f"{env_name}_exp-*_{method_name}_data.csv")
+    pattern = os.path.join(data_dir, f"{env_name}_exp-{exp_num}_{method_name}_data.csv")
     matched_files = glob.glob(pattern)
     if not matched_files:
-        print(f"[Warning] No CSV found for {env_name} with method={method_name} under {data_dir}")
+        print(f"[Warning] No CSV found for {env_name} with method={method_name}, exp={exp_num} under {data_dir}")
         return None
     
     csv_file = matched_files[0]
-    print(f"  Found CSV for {method_name}: {csv_file}")
+    print(f"  Found CSV for {method_name} (exp-{exp_num}): {csv_file}")
     df = pd.read_csv(csv_file)
     return df
+
 
 def compute_mean_return_across_seeds(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -173,11 +176,11 @@ def parse_expert_det_return(expert_txt_path: str) -> float:
     return None
 
 
-def plot_environment(env_name: str, ax: plt.Axes, idx: int):
+def plot_environment(env_name: str, ax: plt.Axes, idx: int, exp_num: int):
     """
     Plots data for a single environment onto a given Axes.
     """
-    print(f"=== Processing environment: {env_name} ===")
+    print(f"=== Processing environment: {env_name} (exp-{exp_num}) ===")
 
     # Expert Return
     expert_txt_path = EXPERT_FILE_DICT.get(env_name)
@@ -198,7 +201,7 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
     
     # 1) Methods
     for method in METHODS:
-        df_raw = load_processed_data_for_method(env_name, method, PROCESSED_DATA_DIR)
+        df_raw = load_processed_data_for_method(env_name, method, PROCESSED_DATA_DIR, exp_num)
         if df_raw is None:
             continue
         
@@ -221,7 +224,7 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int):
     # 2) Baselines
     baseline_results = {}
     for baseline in BASELINES:
-        df_raw = load_processed_data_for_method(env_name, baseline, PROCESSED_DATA_DIR)
+        df_raw = load_processed_data_for_method(env_name, baseline, PROCESSED_DATA_DIR, exp_num)
         if df_raw is None:
             continue
         
@@ -321,13 +324,12 @@ def main():
         figsize=(5 * n_envs, 6),
         sharey=True
     )
-
     
     if n_envs == 1:
         axes = [axes]
     
     for i, env_name in enumerate(ENVIRONMENTS):
-        plot_environment(env_name, ax=axes[i], idx=i)
+        plot_environment(env_name, ax=axes[i], idx=i, exp_num=EXPERIMENT_NUMBER)
     
     # Gather legend info
     handles_labels = [ax.get_legend_handles_labels() for ax in axes]
@@ -348,27 +350,27 @@ def main():
         by_label.values(),
         by_label.keys(),
         loc='lower center',
-        bbox_to_anchor=(0.5, 0.02),
+        bbox_to_anchor=(0.5, 0.01),
         ncol=4
     )
     
     # Adjust spacing
     fig.subplots_adjust(
-        top=0.83,
-        bottom=0.25,
+        top=0.92,
+        bottom=0.3,
         left=0.06,
         right=0.98
     )
 
-    fig.suptitle(
-        "State‐Action Methods",
-        y=0.96,
-        fontsize=23
-    )
+    # fig.suptitle(
+    #     f"State‐Action Methods (Expert Trajectories {EXPERIMENT_NUMBER})",
+    #     y=0.96,
+    #     fontsize=23
+    # )
 
     out_dir = Path("plots")
     out_dir.mkdir(exist_ok=True)
-    out_path = out_dir / "all_envs_single_row_standardized.png"
+    out_path = out_dir / f"all_envs_single_row_standardized_exp{EXPERIMENT_NUMBER}.png"
     fig.savefig(out_path, dpi=300)
     print(f"Saved combined figure to {out_path}")
 
