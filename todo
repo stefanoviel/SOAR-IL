@@ -17,3 +17,16 @@ plto justification of why only 4 nn. It needs to be easy to see that with multip
 
 plot clipping is necessary, there are probably more run than necessary. 
 runnare 
+
+
+
+solo per ant diversi clipping values
+readme ordinare repository
+commento sui plot grid search che il clipping non funziona (trajectories)
+
+grid search meno granulare su hopper walker 
+
+
+
+
+what do we want to show? that different number of neural networks don't lead to big differences in results

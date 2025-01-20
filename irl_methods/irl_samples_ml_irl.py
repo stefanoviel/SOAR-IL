@@ -226,7 +226,8 @@ if __name__ == "__main__":
 
 
     # TODO: change back 
-    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
+    # exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/{v['obj']}" # task/obj/date structure
+    exp_id = f"logs/{env_name}/exp-{num_expert_trajs}/testing_number_nn"
     # exp_id = 'debug'
     if not os.path.exists(exp_id):
         os.makedirs(exp_id)
