@@ -8,7 +8,7 @@ env:
   state_indices: all
 irl:
   training_trajs: 10
-  n_itrs: 600
+  n_itrs: 260 # 1.3M steps in total
   save_interval: 0
   eval_episodes: 20
   expert_episodes: 16

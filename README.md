@@ -1,12 +1,6 @@
 # f-IRL: Inverse Reinforcement Learning via State Marginal Matching
-Appear in Conference on Robot Learning (CoRL) 2020. This repository is to reproduce the results for our method and baselines showed in the paper.
-[arXiv link](https://arxiv.org/abs/2011.04709), [Website link](https://sites.google.com/view/f-irl/home) (with presentation videos)
 
-Authors: Tianwei Ni*, Harshit Sikchi*, Yufei Wang*, Tejus Gupta*, Lisa Lee°, Benjamin Eysenbach°.
-where `*` indicates equal contribution (order by dice rolling) and `°` equal advising.
-
-Note: This repository also contains implementation for prior imitation learning methods like [f-MAX](https://arxiv.org/abs/1911.02256), [AIRL](https://arxiv.org/abs/1710.11248), [MaxEntIRL](https://cdn.aaai.org/AAAI/2008/AAAI08-227.pdf), [GAIL+SAC](https://arxiv.org/abs/1606.03476) and Behavior Cloning.
-
+Note: This repository also contains implementation for prior imitation learning methods like [f-IRL](https://arxiv.org/abs/2011.04709) [[code](https://github.com/twni2016/f-IRL/tree/main)], 
 
 ## Installation
 - PyTorch 1.5+
