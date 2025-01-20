@@ -1,128 +1,103 @@
-# f-IRL: Inverse Reinforcement Learning via State Marginal Matching
+# IL-SOAR : Imitation Learning with Soft Optimistic Actor cRitic
 
-Note: This repository also contains implementation for prior imitation learning methods like [f-IRL](https://arxiv.org/abs/2011.04709) [[code](https://github.com/twni2016/f-IRL/tree/main)], 
+Note: This repository is based on [f-IRL](https://arxiv.org/abs/2011.04709) [[code](https://github.com/twni2016/f-IRL/tree/main)], which we forked and extended with our methods.
 
 ## Installation
-- PyTorch 1.5+
-- OpenAI Gym
-- [MuJoCo](https://www.roboti.us/license.html)
-- `pip install ruamel.yaml` 
-- Download expert data that are used in our paper from [Google Drive](https://drive.google.com/drive/folders/1exDW5cyqRIEBmfBW2uRXSFOlJOBdKPtR?usp=sharing) as `expert_data/` folder
-  - `states/`: expert state trajectories for each environment. We obtain two sets of state trajectories for our method/MaxEntIRL/f-MAX (`*.pt`) and AIRL (`*_airl.pt`), respectively.
-  - `actions/`: expert action trajectories for each environment for AIRL (`*_airl.pt`)
-  - `meta/`: meta information including expert reward curves through training
-  - `reward_models/`: the reward models saved from our algorithm
+- Mujoco environment from OpenAI [Gymnasium](https://gymnasium.farama.org/introduction/basic_usage/)
+- `pip install -r requirements.txt` 
 
 ## File Structure
 - f-IRL (our method): `firl/`
-- Baselines ([f-MAX](https://arxiv.org/abs/1911.02256), [AIRL](https://arxiv.org/abs/1710.11248), [MaxEntIRL](https://cdn.aaai.org/AAAI/2008/AAAI08-227.pdf), [GAIL+SAC](https://arxiv.org/abs/1606.03476), BC): `baselines/`
-- SAC agent: `common/`
+- Baselines ([AIRL](https://arxiv.org/abs/1710.11248), [GAIL+SAC](https://arxiv.org/abs/1606.03476), [SQIL](https://arxiv.org/abs/1905.11108),  BC): `baselines/`
 - Environments: `envs/`
 - Configurations: `configs/`
+- Implented methods ([CISL](https://arxiv.org/abs/2305.16498), [ML-IRL](https://cdn.aaai.org/AAAI/2008/AAAI08-227.pdf), [OPT-AIL](https://arxiv.org/abs/2411.00610)*, [f-IRL](https://arxiv.org/abs/2011.04709)) + SOAR `irl_methods`
+- Scripts for experiments: `scripts/`
+- Code to make the plots: `plotting_code`
+- 
+
+\* OPT-AIL is only used as a baseline, it is included in the same file as ML-IRL due to the similarity of the two. 
 
 ## Instructions
 - All the experiments are to be run under the root folder. 
-- Before starting experiments, please `export PYTHONPATH=${PWD}:$PYTHONPATH` for env variable. 
-- We use yaml files in `configs/` for experimental configurations, please change `obj` value (in the first line) for each method, here is the list of `obj` values:
-    -  Our methods (f-IRL): FKL: `fkl`, RKL: `rkl`, JS: `js`
-    -  Baselines: MaxEntIRL: `maxentirl`, f-MAX-RKL: `f-max-rkl`, GAIL: `gail`, AIRL: `airl`, BC: `bc`
+- We use yaml files in `configs/` for experimental configurations for each environment, please change `obj` value (in the first line) for each method, here is the list of `obj` values and corresponding file that needs to be run with it: 
+    -  Our methods  
+        * f-IRL: `rkl` `irl_methods/irl_samples_f_irl.py`
+        * MaxEntIRL: `maxentirl` `irl_methods/irl_samples_ml_irl.py`
+        * MaxEntIRL (State Actions): `maxentirl_sa` `irl_methods/irl_samples_ml_irl.py`
+        * CISL `cisl` `irl_methods/irl_samples_cisl.py`
+    -  Baselines:  
+        * OPT-AIL `opt-AIL`  `irl_methods/irl_samples_ml_irl.py`
+        * OPT-AIL (SA) `opt-AIL_sa`  `irl_methods/irl_samples_ml_irl.py`
+        * SQIL `sqil` `baselines/sqil.py`
+        * GAIL: (No config needed) `baselines/gail.py`
+        * AIRL: (No config needed) `baselines/airl.py`
 - Please keep all the other values in yaml files unchanged to reproduce the results in our paper.
 - After running, you will see the training logs in `logs/` folder.
 
+## Command Line Arguments
+
+The following hyperparameters can be configured via command line arguments:
+
+- `--config`: (Required) Path to the YAML configuration file containing model and training parameters.
+- `--num_q_pairs`: Number of Q-network pairs to use in the ensemble. SOAR if more than 1 is used. 
+- `--seed`: Random seed for reproducibility. If not specified, will use value from config file.
+- `--uncertainty_coef`: Coefficient that scales the uncertainty-based exploration bonus. Default 1. 
+- `--q_std_clip`: Maximum allowed value for Q-value standard deviations. Helps stabilize training by preventing extremely large uncertainty estimates.
+
+
 ## Experiments
-All the commands below are also provided in `run.sh`.
 
-### Sec 5.1 Density task (Reacher2d)
+All experiments are run with scripts from the `scripts` folder:
 
-```bash
-# our method and maxentirl. you can vary obj in {`fkl`, `rkl`, `js`, `maxentirl`}
-python firl/irl_density.py configs/density/reacher_trace_gauss.yml # Gaussian goal
-python firl/irl_density.py configs/density/reacher_trace_mix.yml # Mixture of Gaussians goal
-# f-MAX-RKL, GAIL. you can vary obj in {`f-max-rkl`, `gail`}
-python baselines/main_density.py configs/density/reacher_trace_gauss.yml # Gaussian goal
-python baselines/main_density.py configs/density/reacher_trace_mix.yml # Mixture of Gaussians goal
-```
+### Grid Search Scripts for SOAR
+- `grid_search_clip_f_irl.sh`: Grid search over clipping values for f-IRL (1 Q-network) and f-IRL+SOAR (4 Q-networks)
+- `grid_search_clip_cisl.sh`: Grid search over clipping values for CISL (1 Q-network) and CISL+SOAR (4 Q-networks) 
+- `grid_search_clip_ml_irl.sh`: Grid search over clipping values for MaxEntIRL (1 Q-network) and MaxEntIRL+SOAR (4 Q-networks)
+- `grid_search_nn_clip_ml_irl.sh`: Grid search over clipping values for MaxEntIRL with state-action features (1 Q-network) and with SOAR (4 Q-networks)
 
-### Sec 5.2 IRL benchmark (MuJoCo)
-First, make sure that you have downloaded expert data into `expert_data/`. *Otherwise*, you can generate expert data by training expert policy:
-```bash
-python -m common.train_expert configs/samples/experts/{env}.yml # env is in {hopper, walker2d, halfcheetah, ant}
-```
+The SOAR version of each method uses an ensemble of 4 Q-networks, while the base version uses a single Q-network.
+The results are saved in the `logs` folder. 
 
-Then train our method or baseline with provided expert data method (Policy Performance).
-Note that you can change the value of `irl: expert_episodes:` into {1, 4, 16} to reproduce the results of {1, 4, 16} trajectories setting shown in Table 3.
+## Baselines
+The baselines can be run using the following scripts:
 
-```bash
-# our method and maxentirl. you can vary obj in {`fkl`, `rkl`, `js`, `maxentirl`}
-python firl/irl_samples.py configs/samples/agents/{env}.yml
-# baselines
-python baselines/bc.py configs/samples/agents/{env}.yml # bc. set obj to `bc`
-python baselines/main_samples.py configs/samples/agents/{env}.yml # f-max-rkl. set obj to `f-max-rkl`
-python baselines/main_samples.py configs/samples/agents/airl/{env}.yml # airl.
-```
+- `run_opt_ail.sh`: Run OPT-AIL baseline experiments  
+- `run_gail.sh`: Run GAIL baseline experiments
+- `run_sqil.sh`: Run SQIL baseline experiments
 
-After the training is done, you can choose one of the saved reward model to train a policy from scratch (Recovering the Stationary Reward Function).
-We provide a learned reward model in `expert_data/reward_models/halfcheetah/` for demonstration purposes.
-```bash 
-python common/train_optimal.py configs/samples/experts/halfcheetah.yml
-```
 
-### Sec 5.3.1 Downstream task 
-First, run f-IRL or the baselines on the pointmass gridworld with a uniform expert density: 
-```bash
-# you can change the obj in grid_uniform.yml to be {`fkl`, `rkl`, `js`, `maxentirl`}
-python firl/irl_density.py configs/density/grid_uniform.yml 
-# you can change the obj in grid_uniform.yml to be {`f-max-rkl`, `gail`}
-python baselines/main_density.py configs/density/grid_uniform.yml
-```
-Then, the discriminator or the reward model should be saved in 
-`logs/ContinuousVecGridEnv-v0/{month}-{date}-uniform/{obj}/{detailed-time-stamp}/model/reward_model_*.pkl`
+## Plots
 
-Then update the path to the stored reward model in firl/prior_reward/main.py at line 132-134, and run
-```bash
-python firl/prior_reward/main.py
-```
-to test the learned reward on the hard-to-explore task.
+The plotting process involves two steps:
 
-The information of the learned sac agent will be saved to 
-`data/prior_reward/potential/{save_name}_{alpha}_{prior_reward_weight}_sac_test_rets.npy`
+1. Data Processing:
+  ```bash
+  python plotting_code/data_processor.py
+  ```
+  This generates preprocessed data files in the `processed_data` folder. Each file corresponds to a specific environment-method-expert trajectory combination.
 
-After obtain the learning results from multiple learned rewards/discriminators,  `firl/prior_reward/plot_image.py` and `firl/prior_reward/plot_reward.py` can be used to create figure 4 in the paper.
+2. Generate Plots:
+  Plots can be generated using the scripts in the `plotting_code` folder after processing the data.
 
-### Sec 5.3.2 Transfer task
-First, make sure that you have downloaded expert data into `expert_data/`. *Otherwise*, you can generate expert data by training expert policy:
-Make sure that the `env_name` parameter in `configs/samples/experts/ant_transfer.yml` is set to `CustomAnt-v0`
-```bash
-python common/train_expert.py configs/samples/experts/ant_transfer.yml
-```
+  ```bash
+  # Plot average returns across environments
+  python plotting_code/plot_average_envs.py
 
-Then train our method or baseline with provided expert data method (Policy Performance).
-```
-python firl/irl_samples.py configs/samples/agents/ant_transfer.yml
-```
-After the training is done, you can choose one of the saved reward model to train a policy from scratch (Recovering the Stationary Reward Function).
+  # Plot grid search results for appendix
+  python plotting_code/plot_returns.py 
+  
+  # Plot best clipping values by environment and baselines
+  python plotting_code/plot_q_bestclip_baselines.py
+  ```
 
-Transferring the reward to disabled Ant:  We provide a learned reward model in `expert_data/reward_models/ant_transfer/` for demonstration purposes.
-Make sure that the `env_name` parameter in `configs/samples/experts/ant_transfer.yml` is set to `DisabledAnt-v0`
-```bash 
-python common/train_optimal.py configs/samples/experts/ant_transfer.yml
-```
+Various hyperparameters for plot appearance can be configured directly in the plotting scripts.
 
 
 ## Citation and References
-If you find our paper useful to your research, please cite the paper: 
-```
-@inproceedings{firl2020corl,
-  title={f-IRL: Inverse Reinforcement Learning via State Marginal Matching},
-  author={Ni, Tianwei and Sikchi, Harshit and Wang, Yufei and Gupta, Tejus and Lee, Lisa and Eysenbach, Ben},
-  booktitle={Conference on Robot Learning},
-  year={2020}
-}
-```
+
+TODO: insert citation
 
 Parts of the codes are used from the references mentioned below:
 
-- [AIRL](https://github.com/justinjfu/inverse_rl) in part of `envs/` 
-- [f-MAX](https://github.com/KamyarGh/rl_swiss/blob/master/run_scripts/adv_smm_exp_script.py) in part of `baselines/`
 - [SAC](https://github.com/openai/spinningup/tree/master/spinup/algos/pytorch/sac) in part of `common/sac`
-- [NPEET](https://github.com/gregversteeg/NPEET) in part of `utils/it_estimator.py`
