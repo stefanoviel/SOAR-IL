@@ -316,6 +316,70 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int, exp_num: int):
     ax.set_ylim(-0.05, 1.05)
     ax.grid(True)
 
+def plot_best_clipping_return(file_path: str, skip_q: float = 1.0, use_trapz: bool = False):
+    # Load the CSV file
+    df = pd.read_csv(file_path)
+
+    # Compute mean and std return across seeds
+    df_mean_std = compute_mean_return_across_seeds(df)
+
+    # Compute AUC for each (q, clip)
+    auc_df = compute_auc(df_mean_std, use_trapz=use_trapz)
+
+    # Find the best clipping value for each q
+    best_clippings = {}
+    for q_val in auc_df['q'].unique():
+        filtered_auc = auc_df[auc_df['q'] == q_val]
+        if not filtered_auc.empty:
+            best_row = filtered_auc.iloc[filtered_auc['auc'].argmax()]
+            best_clippings[q_val] = best_row['clip']
+
+    # Plot return over time for the best clipping value for each q
+    plt.figure(figsize=(10, 6))
+    for q_val, best_clip in best_clippings.items():
+        # Filter the data for the best clipping value for this q
+        subset = df_mean_std[(df_mean_std['q'] == q_val) & (df_mean_std['clip'] == best_clip)]
+
+        # Sort by episode for consistent plotting
+        subset = subset.sort_values(by='episode')
+
+        # Truncate episodes at 1.2 million
+        subset = subset[subset['episode'] <= 1.2e6]
+
+        # Apply smoothing
+        subset['smoothed'] = subset['mean_return'].rolling(SMOOTHING_WINDOW, min_periods=1).mean()
+
+        # Plot
+        if q_val == 1.0:
+            plt.plot(subset['episode'], subset['smoothed'], label=f'Networks={q_val}')
+        else:
+            plt.plot(subset['episode'], subset['smoothed'], label=f'Networks={q_val}, clip={best_clip}')
+
+    env_name = "Ant-v5"
+    expert_txt_path = EXPERT_FILE_DICT.get(env_name)
+    if not expert_txt_path:
+        print(f"  No expert file for {env_name}, skipping plot.")
+        return
+    expert_return = parse_expert_det_return(expert_txt_path)
+
+    # Plot expert return
+    plt.axhline(y=expert_return, color='black', linestyle=':', label='Expert')
+
+    # Add labels, legend, and title
+    plt.xlabel('Episode')
+    plt.ylabel('Mean Return')
+    # plt.title('Mean Return vs Episode for Best Clipping Values')
+    plt.legend()
+    plt.grid(True)
+    
+    # Create plots directory if it doesn't exist
+    os.makedirs('plots', exist_ok=True)
+    
+    # Save the plot
+    plt.savefig('plots/best_clipping_returns.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+
 
 def main():
     n_envs = len(ENVIRONMENTS)
@@ -376,4 +440,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+
+    plot_best_clipping_return('processed_data/Ant-v5_exp-16_testing_number_nn_data.csv')

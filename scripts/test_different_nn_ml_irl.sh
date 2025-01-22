@@ -28,12 +28,12 @@ for env in "${environments[@]}"; do
             echo "Starting process with env=${env}, q_pairs=${q}, seed=${seed}, q_std_clip=${q_std_clip}"
             
             # Run process and wait for the specified delay
-            (python -m irl_methods.irl_samples_ml_irl \
-                --config configs/samples/agents/${env}.yml \
-                --num_q_pairs "${q}" \
-                --seed "${seed}" \
-                --q_std_clip "${q_std_clip}" \
-                > "outputs/${env}/run_q${q}_seed${seed}_clip${q_std_clip}.log" 2>&1) &
+            # (python -m irl_methods.irl_samples_ml_irl \
+            #     --config configs/samples/agents/${env}.yml \
+            #     --num_q_pairs "${q}" \
+            #     --seed "${seed}" \
+            #     --q_std_clip "${q_std_clip}" \
+            #     > "outputs/${env}/run_q${q}_seed${seed}_clip${q_std_clip}.log" 2>&1) &
             
             sleep $delay_seconds
         done
