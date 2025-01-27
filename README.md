@@ -7,19 +7,19 @@ Note: This repository is based on [f-IRL](https://arxiv.org/abs/2011.04709) [[co
 - `pip install -r requirements.txt` 
 
 ## File Structure
-- f-IRL (our method): `firl/`
+
 - Baselines ([AIRL](https://arxiv.org/abs/1710.11248), [GAIL+SAC](https://arxiv.org/abs/1606.03476), [SQIL](https://arxiv.org/abs/1905.11108),  BC): `baselines/`
 - Environments: `envs/`
 - Configurations: `configs/`
-- Implented methods ([CISL](https://arxiv.org/abs/2305.16498), [ML-IRL](https://cdn.aaai.org/AAAI/2008/AAAI08-227.pdf), [OPT-AIL](https://arxiv.org/abs/2411.00610)*, [f-IRL](https://arxiv.org/abs/2011.04709)) + SOAR `irl_methods`
+- Implented methods ([CISL](https://arxiv.org/abs/2305.16498), [ML-IRL](https://cdn.aaai.org/AAAI/2008/AAAI08-227.pdf), [OPT-AIL](https://arxiv.org/abs/2411.00610)*, [f-IRL](https://arxiv.org/abs/2011.04709)) both basic and + SOAR implementation `irl_methods`
 - Scripts for experiments: `scripts/`
 - Code to make the plots: `plotting_code`
-- 
+ 
 
 \* OPT-AIL is only used as a baseline, it is included in the same file as ML-IRL due to the similarity of the two. 
 
-## Instructions
-- All the experiments are to be run under the root folder. 
+## Implemented methods
+
 - We use yaml files in `configs/` for experimental configurations for each environment, please change `obj` value (in the first line) for each method, here is the list of `obj` values and corresponding file that needs to be run with it: 
     -  Our methods  
         * f-IRL: `rkl` `irl_methods/irl_samples_f_irl.py`
@@ -33,11 +33,10 @@ Note: This repository is based on [f-IRL](https://arxiv.org/abs/2011.04709) [[co
         * GAIL: (No config needed) `baselines/gail.py`
         * AIRL: (No config needed) `baselines/airl.py`
 - Please keep all the other values in yaml files unchanged to reproduce the results in our paper.
-- After running, you will see the training logs in `logs/` folder.
 
 ## Command Line Arguments
 
-The following hyperparameters can be configured via command line arguments:
+All the files in the `irl_methods/` folder take the following command line arguments:
 
 - `--config`: (Required) Path to the YAML configuration file containing model and training parameters.
 - `--num_q_pairs`: Number of Q-network pairs to use in the ensemble. SOAR if more than 1 is used. 
@@ -48,7 +47,7 @@ The following hyperparameters can be configured via command line arguments:
 
 ## Experiments
 
-All experiments are run with scripts from the `scripts` folder:
+All experiments are run with scripts from the `scripts` folder and  be run from the root folder:
 
 ### Grid Search Scripts for SOAR
 - `grid_search_clip_f_irl.sh`: Grid search over clipping values for f-IRL (1 Q-network) and f-IRL+SOAR (4 Q-networks)
@@ -75,7 +74,7 @@ The plotting process involves two steps:
   ```bash
   python plotting_code/data_processor.py
   ```
-  This generates preprocessed data files in the `processed_data` folder. Each file corresponds to a specific environment-method-expert trajectory combination.
+  This generates preprocessed data files in the `processed_data` folder. Each file corresponds to a specific environment-method-expert trajectory combination. The preprocessing takes as input the logs file, so you need to run the experiments first. 
 
 2. Generate Plots:
   Plots can be generated using the scripts in the `plotting_code` folder after processing the data.

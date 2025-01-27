@@ -18,7 +18,7 @@ mpl.rcParams['legend.fontsize'] = 14
 
 # ========== USER DEFINED VARIABLES ==========
 
-EXPERIMENT_NUMBER = 16  # Change this to 1 or 16 as needed
+EXPERIMENT_NUMBER = 1  # Change this to 1 or 16 as needed
 
 ENVIRONMENTS = [
     "Ant-v5",
@@ -29,11 +29,12 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-METHODS = ["cisl", "maxentirl_sa"]
-# METHODS = ["maxentirl", "rkl"]
+# METHODS = ["cisl", "maxentirl_sa"]
+METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
-BASELINES = ["gail", "sqil", "opt-AIL_sa"]
+BASELINES = []
+# BASELINES = ["gail", "sqil", "opt-AIL_sa"]
 # BASELINES = ["opt-AIL"]
 
 # Unique colors for each method
@@ -49,7 +50,10 @@ METHOD_DISPLAY_NAMES = {
     "maxentirl": "ML-IRL",
     "maxentirl_sa": "ML-IRL (SA)",
     "cisl": "cisl",
-    "rkl": "rkl",
+    "rkl": "rkl"
+}
+
+BASELINE_DISPLAY_NAMES = {
     "opt-AIL_sa": "opt-AIL (SA)",
 }
 
@@ -251,6 +255,7 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int, exp_num: int):
             # Use display name instead of internal method name
             line_label = METHOD_DISPLAY_NAMES.get(method, method)
             
+            
             ax.plot(
                 q1_data['episode'],
                 q1_data['smoothed'],
@@ -293,12 +298,16 @@ def plot_environment(env_name: str, ax: plt.Axes, idx: int, exp_num: int):
             SMOOTHING_WINDOW, min_periods=1
         ).mean()
         
+        # Use display name instead of internal method name
+        line_label = BASELINE_DISPLAY_NAMES.get(baseline, baseline)
+        print(f"  {baseline}: line_label={line_label}")
+
         ax.plot(
             df_mean_std['episode'],
             df_mean_std['smoothed'],
             linestyle='-.',
             color=color,
-            label=baseline
+            label=line_label
         )
     
     # (c) Expert line at y=1.0
@@ -440,6 +449,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
+    main()
 
-    plot_best_clipping_return('processed_data/Ant-v5_exp-16_testing_number_nn_data.csv')
+    # plot_best_clipping_return('processed_data/Ant-v5_exp-16_testing_number_nn_data.csv')
