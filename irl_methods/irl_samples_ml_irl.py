@@ -51,7 +51,7 @@ def ML_sa_loss(div: str, agent_samples, expert_samples, reward_func, device):
         agent_samples is numpy array of shape (N, T, d) 
         expert_samples is numpy array of shape (N, T, d) or (N, d)
     '''
-    assert div in ['maxentirl_sa', 'opt-AIL_sa']
+    assert div in ['maxentirl_sa', 'opt-AIL_sa', 'hype']
     sA, aA, _ = agent_samples
     print(sA.shape,aA.shape)
     sA=np.concatenate([sA,aA],2)
@@ -174,6 +174,7 @@ if __name__ == "__main__":
                       help='Uncertainty coefficient for exploration (default: 1.0)')
     parser.add_argument('--q_std_clip', type=float, default=1.0,
                       help='Maximum value to clip Q-value standard deviations (default: 1.0)')
+    parser.add_argument('--use_hype', action='store_true', help='Enable hyper parameter optimization')
 
     args = parser.parse_args()
 
@@ -187,7 +188,7 @@ if __name__ == "__main__":
             raise ValueError("num_q_pairs must be one when opt_AIL is true to conform to the description of opt-AIL")
 
     # assumptions
-    assert v['obj'] in ['maxentirl','maxentirl_sa', 'opt-AIL', 'opt-AIL_sa']
+    assert v['obj'] in ['maxentirl','maxentirl_sa', 'opt-AIL', 'opt-AIL_sa', 'hype']
     assert v['IS'] == False
     
     # Use parsed arguments
@@ -270,7 +271,7 @@ if __name__ == "__main__":
     # Initilialize reward as a neural network
     reward_func = MLPReward(len(state_indices), **v['reward'], device=device).to(device)
     use_actions_for_reward = False
-    if v['obj']=='maxentirl_sa' or v['obj']=='opt-AIL_sa':
+    if v['obj']=='maxentirl_sa' or v['obj']=='opt-AIL_sa' or v['obj']=='hype':
         use_actions_for_reward=True
         reward_func = MLPReward(len(state_indices)+action_size, **v['reward'], device=device).to(device)
 
@@ -295,6 +296,18 @@ if __name__ == "__main__":
                 action_size,
                 device=device,
                 size=v['sac']['buffer_size'])
+            
+            if args.use_hype: 
+                # Add expert trajectories to replay buffer
+                for ep in range(expert_trajs.shape[0]):
+                    for t in range(expert_trajs.shape[1]-1):
+                        replay_buffer.store(
+                            expert_trajs[ep,t], 
+                            expert_a[ep,t],
+                            0.0,  # Dummy reward since we'll compute it later
+                            expert_trajs[ep,t+1],
+                            False
+                        )
                 
             sac_agent = SAC(env_fn, replay_buffer,
                 steps_per_epoch=v['env']['T'],
@@ -308,7 +321,7 @@ if __name__ == "__main__":
                 uncertainty_coef=uncertainty_coef,
                 q_std_clip=q_std_clip,
                 use_actions_for_reward=use_actions_for_reward,
-                opt_AIL= (v['obj'] == 'opt-AIL') or (v['obj'] == 'opt-AIL_sa'),
+                opt_AIL= (v['obj'] == 'opt-AIL') or (v['obj'] == 'opt-AIL_sa'), 
                 **v['sac']
             )
         
@@ -345,7 +358,7 @@ if __name__ == "__main__":
 
             if v['obj'] == 'maxentirl' or v['obj'] == 'opt-AIL':
                 loss = ML_loss(v['obj'], samples, expert_samples, reward_func, device)
-            elif v['obj'] == 'maxentirl_sa' or v['obj'] == 'opt-AIL_sa':
+            elif v['obj'] == 'maxentirl_sa' or v['obj'] == 'opt-AIL_sa' or v['obj'] == 'hype':
                 loss = ML_sa_loss(v['obj'], samples, expert_samples_sa, reward_func, device) 
             
             reward_losses.append(loss.item())
@@ -378,4 +391,4 @@ if __name__ == "__main__":
     writer.close()
 
 
-# python -m irl_methods.irl_samples_ml_irl --config configs/samples/agents/hopper.yml --num_q_pairs 4 --seed 0 --uncertainty_coef 1.0 --q_std_clip 1.0 
+# python -m irl_methods.irl_samples_ml_irl --config configs/samples/agents/hopper.yml --num_q_pairs 4 --seed 0 --uncertainty_coef 1.0 --q_std_clip 1.0 --hype

@@ -449,7 +449,7 @@ class SAC:
             # Concatenate states and actions before passing to reward function
             if self.use_actions_for_reward:
                 combined_input = torch.cat([obs, acts], dim=1)
-                avg_ep_return += self.reward_function(obs, acts).sum()
+                avg_ep_return += self.reward_function(combined_input).sum()
             else:
                 avg_ep_return += self.reward_function(obs).sum()
             
@@ -599,7 +599,7 @@ class SAC:
                             # Compute reward using both states and actions
                             acts = batch['act']
                             combined_input = torch.cat([obs, acts], dim=1)
-                            batch['rew'] = torch.FloatTensor(self.reward_function(obs, acts)).to(self.device)
+                            batch['rew'] = torch.FloatTensor(self.reward_function(combined_input)).to(self.device)
                         else:
                             # Compute reward using only states
                             batch['rew'] = torch.FloatTensor(self.reward_function(obs)).to(self.device)
