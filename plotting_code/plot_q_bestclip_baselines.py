@@ -18,7 +18,7 @@ mpl.rcParams['legend.fontsize'] = 14
 
 # ========== USER DEFINED VARIABLES ==========
 
-EXPERIMENT_NUMBER = 1  # Change this to 1 or 16 as needed
+EXPERIMENT_NUMBER = 16  # Change this to 1 or 16 as needed
 
 ENVIRONMENTS = [
     "Ant-v5",
@@ -29,12 +29,12 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-# METHODS = ["cisl", "maxentirl_sa"]
-METHODS = ["maxentirl", "rkl"]
+METHODS = ["cisl", "maxentirl_sa"]
+# METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
-BASELINES = []
-# BASELINES = ["gail", "sqil", "opt-AIL_sa"]
+# BASELINES = []
+BASELINES = ["gail", "sqil", "opt-AIL_sa"]
 # BASELINES = ["opt-AIL"]
 
 # Unique colors for each method
@@ -49,7 +49,7 @@ METHOD_COLORS = {
 METHOD_DISPLAY_NAMES = {
     "maxentirl": "ML-IRL",
     "maxentirl_sa": "ML-IRL (SA)",
-    "cisl": "cisl",
+    "cisl": "csil",
     "rkl": "rkl"
 }
 

@@ -29,7 +29,7 @@ METHODS = ["cisl", "maxentirl_sa", "maxentirl", "rkl"]
 METHOD_DISPLAY_NAMES = {
     "maxentirl": "ML-IRL",
     "maxentirl_sa": "ML-IRL (SA)",
-    "cisl": "CISL",
+    "cisl": "CSIL",
     "rkl": "RKL"
 }
 
