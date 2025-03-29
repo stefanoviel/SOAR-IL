@@ -34,6 +34,10 @@ Note: This repository is based on [f-IRL](https://arxiv.org/abs/2011.04709) [[co
         * AIRL: (No config needed) `baselines/airl.py`
 - Please keep all the other values in yaml files unchanged to reproduce the results in our paper.
 
+# Train the expert
+
+The training is done with SAC, run `python common/train_expert.py` which as first argument it should have one of the files in `configs/samples/experts` which specify on which environment the training of the expert will be made. The expert trajectories will be saved in `expert_data`.
+
 ## Command Line Arguments
 
 All the files in the `irl_methods/` folder take the following command line arguments:
