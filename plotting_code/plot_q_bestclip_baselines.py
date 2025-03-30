@@ -29,7 +29,7 @@ ENVIRONMENTS = [
 ]
 
 # Methods (two lines each: q=1 [dashed], best q [solid])
-METHODS = ["cisl", "maxentirl_sa"]
+METHODS = ["cisl", "maxentirl_sa", "hype"]
 # METHODS = ["maxentirl", "rkl"]
 
 # Baselines (one line each: dash-dot)
@@ -43,6 +43,7 @@ METHOD_COLORS = {
     "rkl": "red",
     "cisl": "green",          
     "maxentirl_sa": "purple",
+    "hype": "crimson"
 }
 
 # Dictionary to map internal method names to display names
@@ -50,7 +51,8 @@ METHOD_DISPLAY_NAMES = {
     "maxentirl": "ML-IRL",
     "maxentirl_sa": "ML-IRL (SA)",
     "cisl": "csil",
-    "rkl": "rkl"
+    "rkl": "rkl",
+    "hype": "HYPE",
 }
 
 BASELINE_DISPLAY_NAMES = {
